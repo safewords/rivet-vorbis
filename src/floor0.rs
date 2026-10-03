@@ -183,7 +183,9 @@ impl From<EndOfPacket> for Floor0Error {
     }
 }
 
+// Index loops read plainest against the formulas they check.
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
     use std::f64::consts::PI;
@@ -205,8 +207,8 @@ mod tests {
     /// factor for even order). An independent route to 6.2.3's p + q.
     fn lpc_power(lsp: &[f64], w: f64) -> f64 {
         let order = lsp.len();
-        let mut p = if order % 2 == 0 { vec![1.0, -1.0] } else { vec![1.0, 0.0, -1.0] };
-        let mut q = if order % 2 == 0 { vec![1.0, 1.0] } else { vec![1.0] };
+        let mut p = if order.is_multiple_of(2) { vec![1.0, -1.0] } else { vec![1.0, 0.0, -1.0] };
+        let mut q = if order.is_multiple_of(2) { vec![1.0, 1.0] } else { vec![1.0] };
         for (j, &a) in lsp.iter().enumerate() {
             let f = [1.0, -2.0 * a.cos(), 1.0];
             if j % 2 == 1 { p = mul(&p, &f) } else { q = mul(&q, &f) }

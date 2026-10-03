@@ -88,11 +88,11 @@ impl Psy {
         }
         let scale = 10f64.powf(adjust_db / 10.0);
         let mut out = vec![0f64; half];
-        for b in 0..bands {
+        for (b, t) in threshold.iter().enumerate() {
             let (s, e) = (self.band_start[b], self.band_start[b + 1]);
-            let per_bin = threshold[b] / (e - s) as f64;
-            for k in s..e {
-                out[k] = per_bin.max(self.ath[k]) * scale;
+            let per_bin = t / (e - s) as f64;
+            for (o, a) in out[s..e].iter_mut().zip(&self.ath[s..e]) {
+                *o = per_bin.max(*a) * scale;
             }
         }
         out

@@ -61,6 +61,7 @@ impl Windows {
     }
 
     /// The window itself, for inspection and tests.
+    #[cfg(test)]
     pub(crate) fn shape(&self, long: bool, prev_long: bool, next_long: bool) -> Vec<f32> {
         let mut w = vec![1f32; self.blocksize[long as usize]];
         self.apply(&mut w, long, prev_long, next_long);
@@ -68,7 +69,9 @@ impl Windows {
     }
 }
 
+// Index loops read plainest against the formulas they check.
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
     use std::f64::consts::PI;

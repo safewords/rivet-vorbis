@@ -3,7 +3,9 @@
 /// `floor1_inverse_dB_table`: floor 1 amplitude for each of the 256
 /// integer floor values, about 0.55 dB apart from -140 dB to 0 dB.
 /// Transcribed from section 10.1 of the Vorbis I specification.
+// Printed as the specification prints it, digits and all.
 #[rustfmt::skip]
+#[allow(clippy::excessive_precision)]
 pub const FLOOR1_INVERSE_DB: [f32; 256] = [
     1.0649863e-07, 1.1341951e-07, 1.2079015e-07, 1.2863978e-07,
     1.3699951e-07, 1.4590251e-07, 1.5538408e-07, 1.6548181e-07,

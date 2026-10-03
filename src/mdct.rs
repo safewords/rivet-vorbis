@@ -162,7 +162,9 @@ impl Fft {
     }
 }
 
+// Index loops read plainest against the formulas they check.
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
 

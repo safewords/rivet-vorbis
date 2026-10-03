@@ -179,7 +179,7 @@ fn posts(half: usize) -> Vec<u32> {
         }
     }
     // A whole number of 3-post partitions.
-    while out.len() % 3 != 0 {
+    while !out.len().is_multiple_of(3) {
         out.pop();
     }
     out

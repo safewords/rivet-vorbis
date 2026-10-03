@@ -11,6 +11,8 @@
 //! Without the files the tests skip (and say so); with
 //! `VORBIS_REQUIRE_VECTORS=1` their absence fails.
 
+#![allow(clippy::needless_range_loop)]
+
 use std::path::PathBuf;
 
 use vorbis::ogg::PacketReader;

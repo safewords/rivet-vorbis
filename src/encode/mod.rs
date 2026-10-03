@@ -2,7 +2,7 @@
 //! [`OggWriter`]).
 //!
 //! Two block sizes (256 and 2048) chosen per block by a transient
-//! detector; a psychoacoustic mask per block and channel ([`psy`]); a
+//! detector; a psychoacoustic mask per block and channel; a
 //! floor 1 curve fitted to that mask; residues quantised against the floor
 //! and coded with residue 2 over all channels, the front and rear pairs
 //! square-polar coupled; codebooks designed from modelled symbol
@@ -218,7 +218,7 @@ impl Encoder {
         if self.finished {
             return Err(Error::Config("encode called after finish".into()));
         }
-        if interleaved.len() % self.channels != 0 {
+        if !interleaved.len().is_multiple_of(self.channels) {
             return Err(Error::Config("sample count is not a multiple of the channel count".into()));
         }
         for frame in interleaved.chunks(self.channels) {
@@ -303,7 +303,7 @@ impl Encoder {
             if !self.finished && self.total < horizon {
                 break;
             }
-            let long = *self.long.get_or_insert_with(|| true);
+            let long = *self.long.get_or_insert(true);
             let long = if c == 0 && self.stats.blocks == [0, 0] { !self.transient(c - 512, c + 1024) && long } else { long };
             let n = BLOCKSIZE[long as usize] as i64;
             let next_center_long = c + n / 4 + BLOCKSIZE[1] as i64 / 4;
@@ -510,10 +510,11 @@ impl Encoder {
             }
             used[m] = true;
             used[a] = true;
-            for k in 0..half {
-                let (nm, na) = couple(q[m][k], q[a][k]);
-                q[m][k] = nm;
-                q[a][k] = na;
+            let (lo, hi) = (m.min(a), m.max(a));
+            let (left, right) = q.split_at_mut(hi);
+            let (qm, qa) = if m < a { (&mut left[lo], &mut right[0]) } else { (&mut right[0], &mut left[lo]) };
+            for (x, y) in qm.iter_mut().zip(qa.iter_mut()) {
+                (*x, *y) = couple(*x, *y);
             }
         }
         let mut w = BitWriter::new();
