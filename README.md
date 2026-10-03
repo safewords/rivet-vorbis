@@ -1,13 +1,13 @@
 # rivet-vorbis
 
-[![CI](https://github.com/rivet-transcoder/rivet-vorbis/actions/workflows/ci.yml/badge.svg)](https://github.com/rivet-transcoder/rivet-vorbis/actions/workflows/ci.yml)
+[![CI](https://github.com/safewords/rivet-vorbis/actions/workflows/ci.yml/badge.svg)](https://github.com/safewords/rivet-vorbis/actions/workflows/ci.yml)
 
 A **Vorbis I** decoder and encoder in Rust, with an **Ogg** (RFC 3533)
 reader and writer: no C, no system libraries, no build script, nothing to
 install on a build host. Written from the Vorbis I specification and
 RFC 3533, not translated from any other implementation.
 
-Written for the **[rivet](https://github.com/rivet-transcoder/rivet)**
+Written for the **[rivet](https://github.com/safewords/rivet)**
 transcoder, where it replaces `lewton` on the decode side and adds Vorbis
 encoding. Usable on its own by anything holding Ogg Vorbis files, or
 Matroska / WebM Vorbis (Xiph-laced `CodecPrivate` plus raw packets), and
@@ -18,7 +18,7 @@ One dependency (`thiserror`), no features, no build script.
 
 ```toml
 [dependencies]
-vorbis = { package = "rivet-vorbis", git = "https://github.com/rivet-transcoder/rivet-vorbis", branch = "develop" }
+vorbis = { package = "rivet-vorbis", git = "https://github.com/safewords/rivet-vorbis", branch = "develop" }
 ```
 
 ## What it decodes
