@@ -1,3 +1,5 @@
 /target
 Cargo.lock
 /tests/vectors/*.ogg
+/tests/references/*.raw
+/tests/references/*.ogg
