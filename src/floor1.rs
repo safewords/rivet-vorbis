@@ -318,9 +318,7 @@ impl Floor1 {
     /// inverse of step 1. `fin` must hold those earlier values.
     pub fn encode_value(&self, fin: &[i32], i: usize, target: i32) -> i32 {
         let range = self.range();
-        let lo = self.low[i];
-        let hi = self.high[i];
-        let predicted = render_point(self.x_list[lo] as i32, fin[lo], self.x_list[hi] as i32, fin[hi], self.x_list[i] as i32);
+        let predicted = self.predict(fin, i);
         let highroom = range - predicted;
         let lowroom = predicted;
         let room = if highroom < lowroom { highroom * 2 } else { lowroom * 2 };
@@ -336,6 +334,14 @@ impl Floor1 {
         } else {
             highroom - 1 - d
         }
+    }
+
+    /// The prediction for post `i` (list order, from 2) from the final Y
+    /// values of its neighbours, as step 1 computes it.
+    pub fn predict(&self, fin: &[i32], i: usize) -> i32 {
+        let lo = self.low[i];
+        let hi = self.high[i];
+        render_point(self.x_list[lo] as i32, fin[lo], self.x_list[hi] as i32, fin[hi], self.x_list[i] as i32)
     }
 
     /// The post order of `x_list` sorted by X, for the encoder.
