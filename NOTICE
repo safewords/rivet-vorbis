@@ -1,0 +1,40 @@
+rivet-vorbis — a Vorbis I encoder and decoder, with Ogg
+Copyright 2026 Ely Erin Fox
+
+This product is licensed under the Open Encoding Attribution License,
+Version 1.0 (see LICENSE.md). It is source-available, not open source: the
+attribution duty in §5 applies to commercial use; §4 requires this NOTICE to
+be carried forward with any distribution.
+
+------------------------------------------------------------------------------
+Provenance
+------------------------------------------------------------------------------
+
+The encoder, the decoder and the Ogg layer are original implementations
+written from the Vorbis I specification (Xiph.Org Foundation) and RFC 3533
+(The Ogg Encapsulation Format Version 0). They are not translations of, and
+do not derive from, any other Vorbis or Ogg implementation's source. The
+specification's one static table, floor1_inverse_dB_table (section 10.1), is
+reproduced from the specification as data; docs/PROVENANCE.md records it and
+every other source.
+
+The Xiph.Org Vorbis test vectors used by the test suite are not part of this
+distribution; tools/fetch-vectors.sh downloads them and tests/vectors/
+SHA256SUMS identifies them.
+
+------------------------------------------------------------------------------
+Patents and trademarks
+------------------------------------------------------------------------------
+
+The Xiph.Org Foundation states that Vorbis is free of known patent
+encumbrance and that anyone may implement the specification. This licence
+grants no rights under any patent, and the authors make no claim about
+whether a licence is needed for any use. Ogg, Vorbis and Xiph.Org are
+trademarks of the Xiph.Org Foundation; this is an independent
+implementation, not certified by it.
+
+------------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------------
+
+thiserror (https://crates.io/crates/thiserror) — MIT OR Apache-2.0
