@@ -109,7 +109,7 @@ impl Comments {
         check_common(packet, 3, "comment")?;
         let body = &packet[7..];
         let mut pos = 0usize;
-        let mut u32_at = |pos: &mut usize| -> Result<u32> {
+        let u32_at = |pos: &mut usize| -> Result<u32> {
             let b = body.get(*pos..*pos + 4).ok_or_else(|| invalid("comment header ends early"))?;
             *pos += 4;
             Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
