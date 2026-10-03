@@ -382,6 +382,8 @@ struct Huffman {
     nodes: Vec<[u32; 2]>,
     /// The entry of a single-entry codebook (the 2015 errata).
     single: Option<u32>,
+    /// No used entries: nothing can be read.
+    empty: bool,
 }
 
 impl Huffman {
@@ -391,7 +393,11 @@ impl Huffman {
         let used: Vec<usize> = (0..lengths.len()).filter(|&i| lengths[i] > 0).collect();
         let mut codes = vec![0u32; lengths.len()];
         match used.len() {
-            0 => return Err(invalid("codebook has no used entries (an underspecified Huffman tree)")),
+            // A codebook with no used entry at all is, strictly, an
+            // underspecified tree; streams carry them (the Xiph.Org
+            // one-entry-codebook vector does) in books nothing reads.
+            // Accept it; reading from it is an end-of-packet.
+            0 => return Ok(Huffman { codes, empty: true, ..Default::default() }),
             1 => {
                 // Errata 20150226: a single used entry must declare length 1;
                 // it reads one bit, whatever its value.
@@ -477,7 +483,7 @@ impl Huffman {
                 table[(reversed | (fill << len)) as usize] = ((e as u32) << 6) | len;
             }
         }
-        Ok(Huffman { codes, table, table_bits, nodes, single: None })
+        Ok(Huffman { codes, table, table_bits, nodes, single: None, empty: false })
     }
 
     #[inline]
@@ -485,6 +491,10 @@ impl Huffman {
         if let Some(e) = self.single {
             r.read(1)?;
             return Ok(e);
+        }
+        if self.empty {
+            r.set_eop();
+            return Err(EndOfPacket);
         }
         let rem = r.remaining();
         let t = self.table[r.peek(self.table_bits) as usize];
@@ -536,7 +546,9 @@ mod tests {
         // With a ninth codeword: overspecified.
         assert!(Codebook::new(1, vec![2, 4, 4, 4, 4, 2, 3, 3, 3], None).is_err());
         assert!(Codebook::new(1, vec![1, 1, 1], None).is_err());
-        assert!(Codebook::new(1, vec![0, 0], None).is_err());
+        // No used entry: accepted (streams carry such books), unreadable.
+        let empty = Codebook::new(1, vec![0, 0], None).unwrap();
+        assert_eq!(empty.decode_scalar(&mut BitReader::new(&[0xff])), Err(EndOfPacket));
     }
 
     #[test]
