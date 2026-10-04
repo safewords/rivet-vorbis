@@ -20,6 +20,11 @@ name = "vorbis"
 [dependencies]
 thiserror = "2"
 
+[features]
+# Compile out the run-time selection of the AVX2 code paths, leaving only
+# the baseline build of every kernel (for testing the fallback).
+force-scalar = []
+
 # The round-trip and test-vector suites decode and encode minutes of audio;
 # unoptimised they take far longer than they need to.
 [profile.test]

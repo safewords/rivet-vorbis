@@ -67,6 +67,37 @@ bit rate from one quality value, −1 to 10. Ogg files from `encode_ogg` or
   (Huffman over Laplacian probabilities whose scales were chosen by
   measuring this encoder's output) and sent in the setup header.
 
+
+## Speed
+
+On a Ryzen 9 9950X (Windows, a shared machine, best of three), in
+multiples of real time; `cargo run --release --example bench -- <pcm.raw>
+[seconds] [runs] [file.ogg …]` measures it.
+
+| | before | now |
+|---|---|---|
+| encode 60 s of a 16-bit stereo album track, q2 / q5 / q8 (one thread) | 282 / 270 / 260 | 286 / 268 / 261 |
+| the same, threaded | — | 1305 / 1297 / 1190 |
+| decode Xiph.Org `moog.ogg` (floor 0) | 230 | 534 |
+| decode `combustion.ogg` | 222 | 660 |
+| decode this encoder's q5 | 954 | 943–1054 |
+
+Floor 0 curves take each coefficient's cosine once per frame instead of
+once per bin group; the IMDCT's FFT runs on split real and imaginary
+arrays with each stage's twiddles contiguous, its two shortest stages
+fused (vectorised; x86-64 builds baseline and AVX2, chosen at run time;
+aarch64 NEON); the bit reader peeks with one 8-byte load. The encoder
+decides its block sequence first (from the transient detector alone) and
+then codes the blocks one `encode` call completes in parallel
+(`Encoder::set_threads`; 1 keeps the caller's thread only).
+
+**Same output everywhere.** No fused multiply-add, and every rewritten
+kernel performs its operations in the original order, so decoded PCM and
+encoded packets are the same to the bit on every CPU, code path
+(`force-scalar` compiles the run-time selection out; CI tests both) and
+thread count — and the same as before this work, for all 26 decodable
+Xiph.Org vectors and the encoder at q2, q5 and q8.
+
 ## How it is checked
 
 - **Xiph.Org test vectors** (`tests/vectors.rs`): the 29 streams at

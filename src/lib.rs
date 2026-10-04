@@ -58,6 +58,7 @@ pub mod floor0;
 pub mod floor1;
 pub mod header;
 mod mdct;
+mod simd;
 pub mod ogg;
 pub mod residue;
 mod stream;

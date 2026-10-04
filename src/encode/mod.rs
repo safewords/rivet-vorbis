@@ -120,6 +120,8 @@ pub struct Encoder {
     long: Option<bool>,
     prev_long: bool,
     stats: EncoderStats,
+    /// Threads for a batch of blocks; 0 is the machine's count.
+    threads: usize,
 }
 
 /// `20 log10` of one floor 1 table step.
@@ -169,7 +171,10 @@ impl Encoder {
         Ok(Encoder {
             floors: [floor(0), floor(1)],
             residues: [setup.residues[0].clone(), setup.residues[1].clone()],
-            psy: [psy::Psy::new(BLOCKSIZE[0] / 2, config.sample_rate), psy::Psy::new(BLOCKSIZE[1] / 2, config.sample_rate)],
+            psy: [
+                psy::Psy::new(BLOCKSIZE[0] / 2, config.sample_rate),
+                psy::Psy::new(BLOCKSIZE[1] / 2, config.sample_rate),
+            ],
             mdct: [Mdct::new(BLOCKSIZE[0]), Mdct::new(BLOCKSIZE[1])],
             windows: Windows::new(BLOCKSIZE),
             lowpass,
@@ -186,6 +191,7 @@ impl Encoder {
             long: None,
             prev_long: true,
             stats: EncoderStats::default(),
+            threads: 0,
             headers,
             setup,
             config,
@@ -210,6 +216,14 @@ impl Encoder {
     /// Counts so far.
     pub fn stats(&self) -> &EncoderStats {
         &self.stats
+    }
+
+    /// How many threads code a batch of blocks (the blocks one
+    /// [`encode`](Self::encode) call completes): 0, the default, is one per
+    /// CPU; 1 codes everything on the caller's thread. The packets are the
+    /// same byte for byte whatever the count.
+    pub fn set_threads(&mut self, threads: usize) {
+        self.threads = threads;
     }
 
     /// Encode interleaved samples (full scale ±1.0); returns the packets
@@ -253,11 +267,7 @@ impl Encoder {
     }
 
     fn sample(&self, c: usize, i: i64) -> f32 {
-        if i < self.buf_start || i >= self.total {
-            0.0
-        } else {
-            self.buf[c][(i - self.buf_start) as usize]
-        }
+        if i < self.buf_start || i >= self.total { 0.0 } else { self.buf[c][(i - self.buf_start) as usize] }
     }
 
     /// Whether `[from, to)` holds an attack: a 64-sample segment whose
@@ -275,7 +285,8 @@ impl Encoder {
             e
         };
         let start = from.div_euclid(SEG) * SEG;
-        let mut history = [energy(start - 4 * SEG), energy(start - 3 * SEG), energy(start - 2 * SEG), energy(start - SEG)];
+        let mut history =
+            [energy(start - 4 * SEG), energy(start - 3 * SEG), energy(start - 2 * SEG), energy(start - SEG)];
         let floor = 1e-6 * SEG as f64 * self.channels as f64;
         let mut s = start;
         while s < to {
@@ -292,7 +303,17 @@ impl Encoder {
     }
 
     fn pump(&mut self) -> Vec<EncodedPacket> {
-        let mut out = Vec::new();
+        // First the block sequence: sizes follow from the transient
+        // detector on the input alone, so it is decided block by block
+        // without coding anything.
+        struct Planned {
+            c: i64,
+            long: bool,
+            prev_long: bool,
+            next_long: bool,
+            last: bool,
+        }
+        let mut plan: Vec<Planned> = Vec::new();
         while !self.done {
             if self.finished && self.total == 0 {
                 self.done = true;
@@ -304,17 +325,13 @@ impl Encoder {
                 break;
             }
             let long = *self.long.get_or_insert(true);
-            let long = if c == 0 && self.stats.blocks == [0, 0] { !self.transient(c - 512, c + 1024) && long } else { long };
+            let first = c == 0 && self.stats.blocks == [0, 0] && plan.is_empty();
+            let long = if first { !self.transient(c - 512, c + 1024) && long } else { long };
             let n = BLOCKSIZE[long as usize] as i64;
             let next_center_long = c + n / 4 + BLOCKSIZE[1] as i64 / 4;
             let next_long = !self.transient(next_center_long - 512, next_center_long + 1024);
-            let mut stats = std::mem::take(&mut self.stats);
-            let data = self.encode_block(c, long, self.prev_long, next_long, &mut stats);
-            self.stats = stats;
             let last = self.finished && c >= self.total;
-            self.stats.blocks[long as usize] += 1;
-            self.stats.bytes += data.len() as u64;
-            out.push(EncodedPacket { data, granule: if last { self.total } else { c }, blocksize: n as usize });
+            plan.push(Planned { c, long, prev_long: self.prev_long, next_long, last });
             if last {
                 self.done = true;
                 break;
@@ -322,15 +339,37 @@ impl Encoder {
             self.prev_long = long;
             self.long = Some(next_long);
             self.center = c + n / 4 + BLOCKSIZE[next_long as usize] as i64 / 4;
-            // Keep what the next block and the transient look-back need.
-            let keep_from = self.center - BLOCKSIZE[1] as i64 - 1024;
-            if keep_from - self.buf_start > 1 << 16 {
-                let drop = (keep_from - self.buf_start) as usize;
-                for b in self.buf.iter_mut() {
-                    b.drain(..drop.min(b.len()));
-                }
-                self.buf_start += drop as i64;
+        }
+        // Then the blocks, which are independent given the sequence, on
+        // up to `threads` threads; packets and statistics in order.
+        let threads =
+            if self.threads == 0 { std::thread::available_parallelism().map_or(1, usize::from) } else { self.threads };
+        let this = &*self;
+        let coded = parallel_map(&plan, threads, |p| {
+            let mut stats = EncoderStats::default();
+            let data = this.encode_block(p.c, p.long, p.prev_long, p.next_long, &mut stats);
+            (data, stats)
+        });
+        let mut out = Vec::with_capacity(plan.len());
+        for (p, (data, stats)) in plan.iter().zip(coded) {
+            self.stats.floor_bits += stats.floor_bits;
+            self.stats.residue_bits += stats.residue_bits;
+            for (a, b) in self.stats.classes.iter_mut().zip(stats.classes) {
+                *a += b;
             }
+            self.stats.blocks[p.long as usize] += 1;
+            self.stats.bytes += data.len() as u64;
+            let n = BLOCKSIZE[p.long as usize];
+            out.push(EncodedPacket { data, granule: if p.last { self.total } else { p.c }, blocksize: n });
+        }
+        // Keep what the next block and the transient look-back need.
+        let keep_from = self.center - BLOCKSIZE[1] as i64 - 1024;
+        if keep_from - self.buf_start > 1 << 16 {
+            let drop = (keep_from - self.buf_start) as usize;
+            for b in self.buf.iter_mut() {
+                b.drain(..drop.min(b.len()));
+            }
+            self.buf_start += drop as i64;
         }
         out
     }
@@ -379,11 +418,7 @@ impl Encoder {
         w.write(y[0] as u32, bits);
         w.write(y[1] as u32, bits);
         let sub = |v: i32| -> usize {
-            if v == 0 {
-                0
-            } else {
-                1 + FLOOR_SUB_LIMITS.iter().position(|&l| v < l).expect("value within range")
-            }
+            if v == 0 { 0 } else { 1 + FLOOR_SUB_LIMITS.iter().position(|&l| v < l).expect("value within range") }
         };
         for part in y[2..].chunks(3) {
             let subs: Vec<usize> = part.iter().map(|&v| sub(v)).collect();
@@ -436,7 +471,10 @@ impl Encoder {
                     if let Some(&b) = passes.get(pass) {
                         let lattice = &RESIDUE_BOOKS[b];
                         let book = &books[books::BOOK_VQ0 + b];
-                        let values: Vec<i32> = v[p * PARTITION..(p + 1) * PARTITION].iter().map(|&q| split(q, passes.len())[pass]).collect();
+                        let values: Vec<i32> = v[p * PARTITION..(p + 1) * PARTITION]
+                            .iter()
+                            .map(|&q| split(q, passes.len())[pass])
+                            .collect();
                         for chunk in values.chunks(lattice.dim) {
                             let mut entry = 0usize;
                             for &x in chunk.iter().rev() {
@@ -491,7 +529,8 @@ impl Encoder {
             let mut any = false;
             for k in 0..lp {
                 let r = x[k] / curve[k];
-                let v = ((r.abs() - self.deadzone).max(0.0).round().copysign(r) as i32).clamp(-MAX_RESIDUE / 2, MAX_RESIDUE / 2);
+                let v = ((r.abs() - self.deadzone).max(0.0).round().copysign(r) as i32)
+                    .clamp(-MAX_RESIDUE / 2, MAX_RESIDUE / 2);
                 q[chan][k] = v;
                 any |= v != 0;
             }
@@ -545,6 +584,34 @@ impl Encoder {
         stats.residue_bits += (w.bit_len() - floors_end) as u64;
         w.into_bytes()
     }
+}
+
+/// `f` over `items`, in order, on up to `threads` threads (the calling
+/// thread among them), each taking the next item as it finishes one.
+fn parallel_map<T: Sync, R: Send>(items: &[T], threads: usize, f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let n = items.len();
+    if threads <= 1 || n <= 1 {
+        return items.iter().map(f).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let work = || {
+        let mut done = Vec::new();
+        loop {
+            let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let Some(item) = items.get(i) else { return done };
+            done.push((i, f(item)));
+        }
+    };
+    let mut all: Vec<(usize, R)> = std::thread::scope(|s| {
+        let helpers: Vec<_> = (1..threads.min(n)).map(|_| s.spawn(work)).collect();
+        let mut all = work();
+        for h in helpers {
+            all.extend(h.join().expect("an encoder thread panicked"));
+        }
+        all
+    });
+    all.sort_unstable_by_key(|(i, _)| *i);
+    all.into_iter().map(|(_, r)| r).collect()
 }
 
 /// A residue value as the passes of its class code it: one value; or a
@@ -641,7 +708,13 @@ mod tests {
     #[test]
     fn split_reassembles() {
         for q in -15592i32..=15592 {
-            let passes = if q.abs() <= 16 { 1 } else if q.abs() <= 247 { 2 } else { 3 };
+            let passes = if q.abs() <= 16 {
+                1
+            } else if q.abs() <= 247 {
+                2
+            } else {
+                3
+            };
             let s = split(q, passes);
             assert_eq!(s.iter().sum::<i32>(), q);
             assert!(s[passes - 1].abs() <= 16);
@@ -668,7 +741,8 @@ mod tests {
             p
         };
         // The tone's own onset at sample 0 is an attack too: look past it.
-        let shorts: Vec<i64> = run(&with_click).iter().filter(|p| p.blocksize == 256 && p.granule > 2048).map(|p| p.granule).collect();
+        let shorts: Vec<i64> =
+            run(&with_click).iter().filter(|p| p.blocksize == 256 && p.granule > 2048).map(|p| p.granule).collect();
         assert!(!shorts.is_empty());
         assert!(shorts.iter().all(|&g| (g - click).abs() < 2048), "short blocks at {shorts:?}");
         assert!(run(&steady).iter().all(|p| p.blocksize == 2048 || p.granule <= 2048));

@@ -62,6 +62,11 @@ impl<'a> BitReader<'a> {
     fn peek_raw(&self, n: u32) -> u32 {
         let byte = self.pos / 8;
         let shift = self.pos % 8;
+        let mask = if n == 32 { u32::MAX as u64 } else { (1u64 << n) - 1 };
+        if let Some(b) = self.data.get(byte..byte + 8) {
+            // One load: at least 57 bits from the position on.
+            return ((u64::from_le_bytes(b.try_into().expect("8 bytes")) >> shift) & mask) as u32;
+        }
         let mut v: u64 = 0;
         for i in 0..5 {
             if let Some(&b) = self.data.get(byte + i) {

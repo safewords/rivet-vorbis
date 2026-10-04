@@ -120,10 +120,17 @@ impl Floor0 {
     /// `p + q` of 6.2.3 at angle `omega`: the squared magnitude response of
     /// the LSP polynomial.
     pub fn p_plus_q(&self, coefficients: &[f32], omega: f64) -> f64 {
+        let cos: Vec<f64> = coefficients.iter().map(|&c| (c as f64).cos()).collect();
+        self.p_plus_q_cos(&cos, omega.cos())
+    }
+
+    /// [`p_plus_q`](Self::p_plus_q) from the coefficients' cosines and
+    /// cos(omega), which the curve synthesis computes once per frame and
+    /// once per bark map value instead of once per term.
+    fn p_plus_q_cos(&self, cos: &[f64], cw: f64) -> f64 {
         let order = self.order as usize;
-        let cw = omega.cos();
         let term = |j: usize| {
-            let d = (coefficients[j] as f64).cos() - cw;
+            let d = cos[j] - cw;
             4.0 * d * d
         };
         let (mut p, mut q);
@@ -154,10 +161,11 @@ impl Floor0 {
         let n = map.len();
         let max = ((1u64 << self.amplitude_bits) - 1) as f64;
         let offset = self.amplitude_offset as f64;
+        let cos: Vec<f64> = frame.coefficients.iter().map(|&c| (c as f64).cos()).collect();
         let mut i = 0;
         while i < n {
             let omega = std::f64::consts::PI * map[i] as f64 / self.bark_map_size as f64;
-            let pq = self.p_plus_q(&frame.coefficients, omega);
+            let pq = self.p_plus_q_cos(&cos, omega.cos());
             let value = (0.11512925 * (frame.amplitude as f64 * offset / (max * pq.sqrt()) - offset)).exp() as f32;
             // A coefficient set whose response has a zero (p + q = 0) has no
             // finite floor there; silence it rather than emit infinity.

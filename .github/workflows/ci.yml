@@ -27,6 +27,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Tests
         run: cargo test --release
+      # The baseline build of every kernel, without the run-time selection
+      # of the AVX2 ones (on arm64 the same NEON build either way).
+      - name: Tests, scalar kernels only
+        run: cargo test --release --features force-scalar
 
   # The Xiph.Org test vectors are fetched (not committed) and checked
   # against the SHA-256 manifest in tests/vectors/; the suite then decodes
@@ -64,6 +68,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --features force-scalar -- -D warnings
       - run: cargo doc --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

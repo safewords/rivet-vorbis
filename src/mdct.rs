@@ -51,16 +51,16 @@ impl Mdct {
     fn dct4(&self, u: &[f64], out: &mut [f64]) {
         let m = self.n / 2;
         let q = m / 2;
-        let mut z: Vec<(f64, f64)> = (0..q)
-            .map(|j| {
-                let (re, im) = (u[2 * j], u[m - 1 - 2 * j]);
-                let (c, s) = self.pre[j];
-                (re * c - im * s, re * s + im * c)
-            })
-            .collect();
-        self.fft.forward(&mut z);
+        let (mut zr, mut zi) = (vec![0f64; q], vec![0f64; q]);
+        for j in 0..q {
+            let (re, im) = (u[2 * j], u[m - 1 - 2 * j]);
+            let (c, s) = self.pre[j];
+            zr[j] = re * c - im * s;
+            zi[j] = re * s + im * c;
+        }
+        self.fft.forward(&mut zr, &mut zi);
         for p in 0..q {
-            let (re, im) = z[p];
+            let (re, im) = (zr[p], zi[p]);
             let (c, s) = self.post[p];
             let (sr, si) = (re * c - im * s, re * s + im * c);
             out[2 * p] = sr;
@@ -115,51 +115,113 @@ impl Mdct {
     }
 }
 
-/// Iterative radix-2 complex FFT, `X[p] = sum z[j] exp(-2 pi i j p / L)`.
+/// Iterative radix-2 complex FFT, `X[p] = sum z[j] exp(-2 pi i j p / L)`,
+/// on separate real and imaginary arrays. Each stage's twiddles are laid
+/// out contiguously (the same values as `exp(-2 pi i k / L)` at the
+/// stage's stride), so the butterflies of a group run side by side; every
+/// butterfly is the same arithmetic in the same order, so the result does
+/// not depend on how wide the vectors are.
 struct Fft {
     len: usize,
     rev: Vec<u32>,
-    twiddle: Vec<(f64, f64)>,
+    /// Per stage (butterfly span 2, 4, …, len): its `span / 2` twiddles,
+    /// real parts then imaginary parts.
+    stages: Vec<(Vec<f64>, Vec<f64>)>,
 }
 
 impl Fft {
     fn new(len: usize) -> Self {
         let bits = len.trailing_zeros();
         let rev = (0..len as u32).map(|i| if bits == 0 { 0 } else { i.reverse_bits() >> (32 - bits) }).collect();
-        let twiddle = (0..len / 2)
+        let twiddle: Vec<(f64, f64)> = (0..len / 2)
             .map(|k| {
                 let a = -2.0 * PI * k as f64 / len as f64;
                 (a.cos(), a.sin())
             })
             .collect();
-        Fft { len, rev, twiddle }
+        let mut stages = Vec::new();
+        let mut size = 2;
+        while size <= len {
+            let step = len / size;
+            let (wr, wi) = (0..size / 2).map(|k| twiddle[k * step]).unzip();
+            stages.push((wr, wi));
+            size *= 2;
+        }
+        Fft { len, rev, stages }
     }
 
-    fn forward(&self, z: &mut [(f64, f64)]) {
+    fn forward(&self, re: &mut [f64], im: &mut [f64]) {
         let n = self.len;
         for i in 0..n {
             let j = self.rev[i] as usize;
             if j > i {
-                z.swap(i, j);
+                re.swap(i, j);
+                im.swap(i, j);
             }
         }
-        let mut size = 2;
-        while size <= n {
-            let half = size / 2;
-            let step = n / size;
-            for start in (0..n).step_by(size) {
-                for k in 0..half {
-                    let (wr, wi) = self.twiddle[k * step];
-                    let (xr, xi) = z[start + k + half];
-                    let t = (xr * wr - xi * wi, xr * wi + xi * wr);
-                    let u = z[start + k];
-                    z[start + k] = (u.0 + t.0, u.1 + t.1);
-                    z[start + k + half] = (u.0 - t.0, u.1 - t.1);
-                }
-            }
-            size *= 2;
+        let mut stages = self.stages.iter();
+        if let [s1, s2, ..] = self.stages.as_slice() {
+            // The two shortest spans, fused (the same butterflies in the
+            // same order, four points at a time).
+            first_stages(re, im, s1, s2);
+            stages.nth(1);
+        }
+        for (wr, wi) in stages {
+            butterflies(re, im, wr, wi);
         }
     }
+}
+
+crate::simd::multiversion! {
+/// The stages of span 2 and 4 on each group of four points.
+fn first_stages(re: &mut [f64], im: &mut [f64], s1: &(Vec<f64>, Vec<f64>), s2: &(Vec<f64>, Vec<f64>)) {
+    let (w1r, w1i) = (s1.0[0], s1.1[0]);
+    let (w2r, w2i): (&[f64; 2], &[f64; 2]) =
+        (s2.0[..2].try_into().expect("two twiddles"), s2.1[..2].try_into().expect("two twiddles"));
+    for (r, i) in re.as_chunks_mut::<4>().0.iter_mut().zip(im.as_chunks_mut::<4>().0) {
+        // Span 2: (0, 1) and (2, 3).
+        for p in [0, 2] {
+            let (a, b) = (r[p + 1], i[p + 1]);
+            let (tr, ti) = (a * w1r - b * w1i, a * w1i + b * w1r);
+            let (cr, ci) = (r[p], i[p]);
+            r[p] = cr + tr;
+            i[p] = ci + ti;
+            r[p + 1] = cr - tr;
+            i[p + 1] = ci - ti;
+        }
+        // Span 4: (0, 2) and (1, 3).
+        for k in 0..2 {
+            let (a, b) = (r[k + 2], i[k + 2]);
+            let (tr, ti) = (a * w2r[k] - b * w2i[k], a * w2i[k] + b * w2r[k]);
+            let (cr, ci) = (r[k], i[k]);
+            r[k] = cr + tr;
+            i[k] = ci + ti;
+            r[k + 2] = cr - tr;
+            i[k + 2] = ci - ti;
+        }
+    }
+}
+}
+
+crate::simd::multiversion! {
+/// One radix-2 stage: for every group of `2 · half` points (`half` the
+/// twiddle count), `t = w_k · z[k + half]`, `z[k] ± t`.
+fn butterflies(re: &mut [f64], im: &mut [f64], wr: &[f64], wi: &[f64]) {
+    let half = wr.len();
+    for (gr, gi) in re.chunks_exact_mut(2 * half).zip(im.chunks_exact_mut(2 * half)) {
+        let (ur, xr) = gr.split_at_mut(half);
+        let (ui, xi) = gi.split_at_mut(half);
+        for k in 0..half {
+            let (a, b) = (xr[k], xi[k]);
+            let (tr, ti) = (a * wr[k] - b * wi[k], a * wi[k] + b * wr[k]);
+            let (cr, ci) = (ur[k], ui[k]);
+            ur[k] = cr + tr;
+            ui[k] = ci + ti;
+            xr[k] = cr - tr;
+            xi[k] = ci - ti;
+        }
+    }
+}
 }
 
 // Index loops read plainest against the formulas they check.
@@ -180,6 +242,55 @@ mod tests {
                 ((s >> 33) as f64 / (1u64 << 31) as f64 * 2.0 - 1.0) as f32
             })
             .collect()
+    }
+
+    /// The FFT as first written: complex pairs, twiddles indexed at the
+    /// stage's stride, one butterfly at a time.
+    fn fft_pairs(z: &mut [(f64, f64)]) {
+        let n = z.len();
+        let bits = n.trailing_zeros();
+        for i in 0..n {
+            let j = if bits == 0 { 0 } else { (i as u32).reverse_bits() as usize >> (32 - bits) };
+            if j > i {
+                z.swap(i, j);
+            }
+        }
+        let twiddle: Vec<(f64, f64)> = (0..n / 2)
+            .map(|k| {
+                let a = -2.0 * PI * k as f64 / n as f64;
+                (a.cos(), a.sin())
+            })
+            .collect();
+        let mut size = 2;
+        while size <= n {
+            let half = size / 2;
+            let step = n / size;
+            for start in (0..n).step_by(size) {
+                for k in 0..half {
+                    let (wr, wi) = twiddle[k * step];
+                    let (xr, xi) = z[start + k + half];
+                    let t = (xr * wr - xi * wi, xr * wi + xi * wr);
+                    let u = z[start + k];
+                    z[start + k] = (u.0 + t.0, u.1 + t.1);
+                    z[start + k + half] = (u.0 - t.0, u.1 - t.1);
+                }
+            }
+            size *= 2;
+        }
+    }
+
+    #[test]
+    fn the_split_fft_is_the_paired_one_to_the_bit() {
+        for len in [1usize, 2, 4, 8, 16, 64, 512, 2048] {
+            let x = noise(2 * len, len as u64);
+            let mut pairs: Vec<(f64, f64)> = (0..len).map(|i| (x[2 * i] as f64, x[2 * i + 1] as f64)).collect();
+            let (mut re, mut im): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
+            fft_pairs(&mut pairs);
+            Fft::new(len).forward(&mut re, &mut im);
+            for (i, &(a, b)) in pairs.iter().enumerate() {
+                assert_eq!((re[i].to_bits(), im[i].to_bits()), (a.to_bits(), b.to_bits()), "len {len} bin {i}");
+            }
+        }
     }
 
     /// The fast inverse against the definition, summed in f64.
@@ -208,8 +319,7 @@ mod tests {
             let mut fast = vec![0f32; n / 2];
             mdct.forward(&x, &mut fast);
             for k in 0..n / 2 {
-                let reference: f64 =
-                    (0..n).map(|i| x[i] as f64 * phase(n, i, k).cos()).sum::<f64>() * 4.0 / n as f64;
+                let reference: f64 = (0..n).map(|i| x[i] as f64 * phase(n, i, k).cos()).sum::<f64>() * 4.0 / n as f64;
                 assert!((reference - fast[k] as f64).abs() < 1e-5, "n {n} k {k}");
             }
         }
