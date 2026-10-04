@@ -35,13 +35,55 @@ pub(crate) struct Lattice {
 
 /// The residue books, A to G.
 pub(crate) const RESIDUE_BOOKS: [Lattice; 7] = [
-    Lattice { dim: 4, values: 3, min: -1, step: 1, scale: 0.75 },
-    Lattice { dim: 4, values: 5, min: -2, step: 1, scale: 0.8 },
-    Lattice { dim: 2, values: 9, min: -4, step: 1, scale: 1.4 },
-    Lattice { dim: 2, values: 17, min: -8, step: 1, scale: 2.6 },
-    Lattice { dim: 2, values: 33, min: -16, step: 1, scale: 5.0 },
-    Lattice { dim: 2, values: 15, min: -231, step: 33, scale: 0.3 },
-    Lattice { dim: 1, values: 63, min: -15345, step: 495, scale: 0.5 },
+    Lattice {
+        dim: 4,
+        values: 3,
+        min: -1,
+        step: 1,
+        scale: 0.75,
+    },
+    Lattice {
+        dim: 4,
+        values: 5,
+        min: -2,
+        step: 1,
+        scale: 0.8,
+    },
+    Lattice {
+        dim: 2,
+        values: 9,
+        min: -4,
+        step: 1,
+        scale: 1.4,
+    },
+    Lattice {
+        dim: 2,
+        values: 17,
+        min: -8,
+        step: 1,
+        scale: 2.6,
+    },
+    Lattice {
+        dim: 2,
+        values: 33,
+        min: -16,
+        step: 1,
+        scale: 5.0,
+    },
+    Lattice {
+        dim: 2,
+        values: 15,
+        min: -231,
+        step: 33,
+        scale: 0.3,
+    },
+    Lattice {
+        dim: 1,
+        values: 63,
+        min: -15345,
+        step: 495,
+        scale: 0.5,
+    },
 ];
 
 /// Residue partition classes: the largest magnitude each covers and its
@@ -74,7 +116,10 @@ pub(crate) fn huffman_lengths(weights: &[f64], max_len: u32) -> Vec<u8> {
     let total: f64 = weights.iter().sum::<f64>().max(1e-300);
     let mut flatten = 0.0;
     loop {
-        let w: Vec<f64> = weights.iter().map(|&x| x / total + flatten / n as f64).collect();
+        let w: Vec<f64> = weights
+            .iter()
+            .map(|&x| x / total + flatten / n as f64)
+            .collect();
         let lengths = huffman(&w);
         if lengths.iter().all(|&l| l as u32 <= max_len) {
             return lengths;
@@ -87,7 +132,11 @@ fn huffman(w: &[f64]) -> Vec<u8> {
     // Weights as fixed point for a total order in the heap.
     let n = w.len();
     let mut parent = vec![usize::MAX; 2 * n - 1];
-    let mut heap: BinaryHeap<Reverse<(u64, usize)>> = w.iter().enumerate().map(|(i, &x)| Reverse(((x * 1e15) as u64 + 1, i))).collect();
+    let mut heap: BinaryHeap<Reverse<(u64, usize)>> = w
+        .iter()
+        .enumerate()
+        .map(|(i, &x)| Reverse(((x * 1e15) as u64 + 1, i)))
+        .collect();
     let mut next = n;
     while heap.len() > 1 {
         let Reverse((a, i)) = heap.pop().expect("two nodes");
@@ -127,7 +176,10 @@ fn lattice_book(l: &Lattice) -> Codebook {
             for _ in 0..l.dim {
                 let digit = rest % l.values;
                 rest /= l.values;
-                p *= laplace((l.min + digit as i32 * l.step) as f64 / l.step as f64, l.scale);
+                p *= laplace(
+                    (l.min + digit as i32 * l.step) as f64 / l.step as f64,
+                    l.scale,
+                );
             }
             p
         })
@@ -141,7 +193,8 @@ fn lattice_book(l: &Lattice) -> Codebook {
         sequence_p: false,
         multiplicands: (0..l.values as u32).collect(),
     };
-    Codebook::new(l.dim as u16, huffman_lengths(&weights, 24), Some(lookup)).expect("designed lattice book")
+    Codebook::new(l.dim as u16, huffman_lengths(&weights, 24), Some(lookup))
+        .expect("designed lattice book")
 }
 
 /// Every codebook the encoder uses, in setup order.
@@ -149,11 +202,19 @@ pub(crate) fn codebooks() -> Vec<Codebook> {
     let mut books = Vec::new();
     // Floor master: three subclass digits (2 bits each, element 0 lowest).
     let digit = [0.40, 0.30, 0.22, 0.08];
-    let master: Vec<f64> = (0..64).map(|c| digit[c & 3] * digit[c >> 2 & 3] * digit[c >> 4 & 3]).collect();
+    let master: Vec<f64> = (0..64)
+        .map(|c| digit[c & 3] * digit[c >> 2 & 3] * digit[c >> 4 & 3])
+        .collect();
     books.push(scalar_book(&master));
     books.push(scalar_book(&[0.05, 0.40, 0.33, 0.22]));
-    books.push(scalar_book(&(0..16).map(|v| laplace(v as f64, 5.0)).collect::<Vec<_>>()));
-    books.push(scalar_book(&(0..128).map(|v| laplace(v as f64, 25.0)).collect::<Vec<_>>()));
+    books.push(scalar_book(
+        &(0..16).map(|v| laplace(v as f64, 5.0)).collect::<Vec<_>>(),
+    ));
+    books.push(scalar_book(
+        &(0..128)
+            .map(|v| laplace(v as f64, 25.0))
+            .collect::<Vec<_>>(),
+    ));
     // Classbook: two classifications per word.
     let class = [0.30, 0.20, 0.20, 0.12, 0.08, 0.06, 0.03, 0.01];
     let words: Vec<f64> = (0..64).map(|w| class[w / 8] * class[w % 8]).collect();
@@ -167,9 +228,18 @@ pub(crate) fn codebooks() -> Vec<Codebook> {
 /// Floor 1 posts (besides 0 and the end), sorted, for a vector of `half`
 /// values: denser at low frequencies.
 fn posts(half: usize) -> Vec<u32> {
-    let long = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 896];
-    let short = [1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 112];
-    let (list, base): (&[u32], u32) = if half >= 1024 { (&long, 1024) } else { (&short, 128) };
+    let long = [
+        1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160,
+        192, 224, 256, 320, 384, 448, 512, 640, 768, 896,
+    ];
+    let short = [
+        1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 112,
+    ];
+    let (list, base): (&[u32], u32) = if half >= 1024 {
+        (&long, 1024)
+    } else {
+        (&short, 128)
+    };
     // Scale to this vector length, keeping posts distinct and inside it.
     let mut out: Vec<u32> = Vec::new();
     for &p in list {
@@ -201,7 +271,11 @@ fn bisection_order(sorted: &[u32], end: u32) -> Vec<u32> {
         }
         let target = ((full[lo].max(1) as f64) * (full[hi] as f64)).sqrt();
         let mid = (lo + 1..hi)
-            .min_by(|&a, &b| ((full[a] as f64).ln() - target.ln()).abs().total_cmp(&((full[b] as f64).ln() - target.ln()).abs()))
+            .min_by(|&a, &b| {
+                ((full[a] as f64).ln() - target.ln())
+                    .abs()
+                    .total_cmp(&((full[b] as f64).ln() - target.ln()).abs())
+            })
             .expect("interval has an inside");
         order.push(full[mid]);
         queue.push_back((lo, mid));
@@ -220,9 +294,22 @@ pub(crate) fn floor(half: usize, codebooks: usize) -> Floor1 {
         dimensions: 3,
         subclasses: 2,
         masterbook: BOOK_FLOOR_MASTER as u8,
-        subclass_books: vec![-1, BOOK_FLOOR_SUB[0] as i16, BOOK_FLOOR_SUB[1] as i16, BOOK_FLOOR_SUB[2] as i16],
+        subclass_books: vec![
+            -1,
+            BOOK_FLOOR_SUB[0] as i16,
+            BOOK_FLOOR_SUB[1] as i16,
+            BOOK_FLOOR_SUB[2] as i16,
+        ],
     };
-    Floor1::new(vec![0; sorted.len() / 3], vec![class], 2, rangebits, x_list, codebooks).expect("designed floor")
+    Floor1::new(
+        vec![0; sorted.len() / 3],
+        vec![class],
+        2,
+        rangebits,
+        x_list,
+        codebooks,
+    )
+    .expect("designed floor")
 }
 
 /// The residue 2 configuration for `channels` vectors of `half` values,
@@ -279,15 +366,32 @@ pub(crate) fn lfe(channels: u8) -> Option<usize> {
 /// the given coded ends, mappings 0 and 1, modes 0 (short) and 1 (long).
 pub(crate) fn setup(channels: u8, blocksize: [usize; 2], residue_end: [usize; 2]) -> Setup {
     let codebooks = codebooks();
-    let floors = vec![Floor::One(floor(blocksize[0] / 2, codebooks.len())), Floor::One(floor(blocksize[1] / 2, codebooks.len()))];
+    let floors = vec![
+        Floor::One(floor(blocksize[0] / 2, codebooks.len())),
+        Floor::One(floor(blocksize[1] / 2, codebooks.len())),
+    ];
     let residues = vec![residue(residue_end[0]), residue(residue_end[1])];
-    let mapping = |i: u8| Mapping { coupling: coupling(channels), mux: vec![0; channels as usize], submap_floor: vec![i], submap_residue: vec![i] };
+    let mapping = |i: u8| Mapping {
+        coupling: coupling(channels),
+        mux: vec![0; channels as usize],
+        submap_floor: vec![i],
+        submap_residue: vec![i],
+    };
     Setup {
         codebooks,
         floors,
         residues,
         mappings: vec![mapping(0), mapping(1)],
-        modes: vec![Mode { blockflag: false, mapping: 0 }, Mode { blockflag: true, mapping: 1 }],
+        modes: vec![
+            Mode {
+                blockflag: false,
+                mapping: 0,
+            },
+            Mode {
+                blockflag: true,
+                mapping: 1,
+            },
+        ],
     }
 }
 
@@ -297,7 +401,11 @@ mod tests {
 
     #[test]
     fn designed_lengths_make_complete_trees() {
-        for w in [vec![1.0, 1.0], vec![0.5, 0.25, 0.125, 0.125], (0..300).map(|i| (-(i as f64) / 3.0).exp()).collect()] {
+        for w in [
+            vec![1.0, 1.0],
+            vec![0.5, 0.25, 0.125, 0.125],
+            (0..300).map(|i| (-(i as f64) / 3.0).exp()).collect(),
+        ] {
             let l = huffman_lengths(&w, 24);
             let kraft: f64 = l.iter().map(|&x| 0.5f64.powi(x as i32)).sum();
             assert!((kraft - 1.0).abs() < 1e-12);
@@ -336,10 +444,13 @@ mod tests {
     #[test]
     fn class_ranges_are_covered_by_their_books() {
         for (max, passes) in CLASSES.iter().skip(1) {
-            let reach: i32 = passes.iter().map(|&b| {
-                let l = &RESIDUE_BOOKS[b];
-                (l.min + (l.values as i32 - 1) * l.step).abs()
-            }).sum();
+            let reach: i32 = passes
+                .iter()
+                .map(|&b| {
+                    let l = &RESIDUE_BOOKS[b];
+                    (l.min + (l.values as i32 - 1) * l.step).abs()
+                })
+                .sum();
             assert!(reach >= *max, "class reaching {max}: {reach}");
         }
     }

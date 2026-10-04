@@ -43,7 +43,12 @@ impl Mdct {
                 (a.cos(), a.sin())
             })
             .collect();
-        Mdct { n, pre, post, fft: Fft::new(q) }
+        Mdct {
+            n,
+            pre,
+            post,
+            fft: Fft::new(q),
+        }
     }
 
     /// DCT-IV of `u` (length M) into `out`, unnormalised:
@@ -132,7 +137,15 @@ struct Fft {
 impl Fft {
     fn new(len: usize) -> Self {
         let bits = len.trailing_zeros();
-        let rev = (0..len as u32).map(|i| if bits == 0 { 0 } else { i.reverse_bits() >> (32 - bits) }).collect();
+        let rev = (0..len as u32)
+            .map(|i| {
+                if bits == 0 {
+                    0
+                } else {
+                    i.reverse_bits() >> (32 - bits)
+                }
+            })
+            .collect();
         let twiddle: Vec<(f64, f64)> = (0..len / 2)
             .map(|k| {
                 let a = -2.0 * PI * k as f64 / len as f64;
@@ -238,7 +251,9 @@ mod tests {
         let mut s = seed;
         (0..len)
             .map(|_| {
-                s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 ((s >> 33) as f64 / (1u64 << 31) as f64 * 2.0 - 1.0) as f32
             })
             .collect()
@@ -250,7 +265,11 @@ mod tests {
         let n = z.len();
         let bits = n.trailing_zeros();
         for i in 0..n {
-            let j = if bits == 0 { 0 } else { (i as u32).reverse_bits() as usize >> (32 - bits) };
+            let j = if bits == 0 {
+                0
+            } else {
+                (i as u32).reverse_bits() as usize >> (32 - bits)
+            };
             if j > i {
                 z.swap(i, j);
             }
@@ -283,12 +302,18 @@ mod tests {
     fn the_split_fft_is_the_paired_one_to_the_bit() {
         for len in [1usize, 2, 4, 8, 16, 64, 512, 2048] {
             let x = noise(2 * len, len as u64);
-            let mut pairs: Vec<(f64, f64)> = (0..len).map(|i| (x[2 * i] as f64, x[2 * i + 1] as f64)).collect();
+            let mut pairs: Vec<(f64, f64)> = (0..len)
+                .map(|i| (x[2 * i] as f64, x[2 * i + 1] as f64))
+                .collect();
             let (mut re, mut im): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
             fft_pairs(&mut pairs);
             Fft::new(len).forward(&mut re, &mut im);
             for (i, &(a, b)) in pairs.iter().enumerate() {
-                assert_eq!((re[i].to_bits(), im[i].to_bits()), (a.to_bits(), b.to_bits()), "len {len} bin {i}");
+                assert_eq!(
+                    (re[i].to_bits(), im[i].to_bits()),
+                    (a.to_bits(), b.to_bits()),
+                    "len {len} bin {i}"
+                );
             }
         }
     }
@@ -319,7 +344,11 @@ mod tests {
             let mut fast = vec![0f32; n / 2];
             mdct.forward(&x, &mut fast);
             for k in 0..n / 2 {
-                let reference: f64 = (0..n).map(|i| x[i] as f64 * phase(n, i, k).cos()).sum::<f64>() * 4.0 / n as f64;
+                let reference: f64 = (0..n)
+                    .map(|i| x[i] as f64 * phase(n, i, k).cos())
+                    .sum::<f64>()
+                    * 4.0
+                    / n as f64;
                 assert!((reference - fast[k] as f64).abs() < 1e-5, "n {n} k {k}");
             }
         }
@@ -352,7 +381,12 @@ mod tests {
             start += n / 2;
         }
         for i in n / 2..signal.len() - n / 2 {
-            assert!((out[i] - signal[i]).abs() < 1e-5, "sample {i}: {} vs {}", out[i], signal[i]);
+            assert!(
+                (out[i] - signal[i]).abs() < 1e-5,
+                "sample {i}: {} vs {}",
+                out[i],
+                signal[i]
+            );
         }
     }
 }

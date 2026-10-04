@@ -25,10 +25,20 @@ fn sample_stream(channels: u8) -> Vec<u8> {
     let input: Vec<f32> = (0..rate as usize * channels as usize / 2)
         .map(|i| {
             let t = (i / channels as usize) as f32 / rate as f32;
-            (t * 2.0 * std::f32::consts::PI * 440.0).sin() * 0.3 + if i % 5000 < 20 { 0.5 } else { 0.0 }
+            (t * 2.0 * std::f32::consts::PI * 440.0).sin() * 0.3
+                + if i % 5000 < 20 { 0.5 } else { 0.0 }
         })
         .collect();
-    encode_ogg(&EncoderConfig { sample_rate: rate, channels, quality: 3.0, comments: vec![] }, &input).unwrap()
+    encode_ogg(
+        &EncoderConfig {
+            sample_rate: rate,
+            channels,
+            quality: 3.0,
+            comments: vec![],
+        },
+        &input,
+    )
+    .unwrap()
 }
 
 fn mutate(rng: &mut Rng, bytes: &[u8]) -> Vec<u8> {
@@ -78,7 +88,9 @@ fn damaged_files_never_panic() {
 
 fn headers(stream: &[u8]) -> Vec<Vec<u8>> {
     let mut r = PacketReader::new(stream);
-    (0..3).map(|_| r.next_packet().unwrap().unwrap().data).collect()
+    (0..3)
+        .map(|_| r.next_packet().unwrap().unwrap().data)
+        .collect()
 }
 
 fn audio(stream: &[u8]) -> Vec<Vec<u8>> {
@@ -131,6 +143,9 @@ fn damaged_headers_never_panic() {
                 let _ = d.decode(p);
             }
         }
-        let _ = Decoder::from_xiph_lacing(&mutate(&mut rng, &vorbis::xiph_lacing([&h[0], &h[1], &h[2]])));
+        let _ = Decoder::from_xiph_lacing(&mutate(
+            &mut rng,
+            &vorbis::xiph_lacing([&h[0], &h[1], &h[2]]),
+        ));
     }
 }

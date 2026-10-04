@@ -24,7 +24,11 @@ pub fn crc32(data: &[u8]) -> u32 {
         for (i, e) in t.iter_mut().enumerate() {
             let mut r = (i as u32) << 24;
             for _ in 0..8 {
-                r = if r & 0x8000_0000 != 0 { (r << 1) ^ 0x04c1_1db7 } else { r << 1 };
+                r = if r & 0x8000_0000 != 0 {
+                    (r << 1) ^ 0x04c1_1db7
+                } else {
+                    r << 1
+                };
             }
             *e = r;
         }
@@ -90,7 +94,15 @@ pub struct PageReader<R: Read> {
 impl<R: Read> PageReader<R> {
     /// Read pages from `inner`.
     pub fn new(inner: R) -> Self {
-        PageReader { inner, buf: Vec::new(), pos: 0, eof: false, strict: false, skipped_bytes: 0, bad_pages: 0 }
+        PageReader {
+            inner,
+            buf: Vec::new(),
+            pos: 0,
+            eof: false,
+            strict: false,
+            skipped_bytes: 0,
+            bad_pages: 0,
+        }
     }
 
     /// Strict mode: garbage between pages or a CRC mismatch is an error
@@ -150,7 +162,10 @@ impl<R: Read> PageReader<R> {
                 self.pos = self.buf.len();
                 return Ok(None);
             }
-            let body_len: usize = self.buf[self.pos + 27..self.pos + 27 + segments].iter().map(|&b| b as usize).sum();
+            let body_len: usize = self.buf[self.pos + 27..self.pos + 27 + segments]
+                .iter()
+                .map(|&b| b as usize)
+                .sum();
             let total = 27 + segments + body_len;
             if !self.fill(total)? {
                 if self.strict {
@@ -218,7 +233,14 @@ pub struct PacketReader<R: Read> {
 impl<R: Read> PacketReader<R> {
     /// Read packets from `inner`.
     pub fn new(inner: R) -> Self {
-        PacketReader { pages: PageReader::new(inner), partial: HashMap::new(), sequence: HashMap::new(), queue: VecDeque::new(), strict: false, lost_packets: 0 }
+        PacketReader {
+            pages: PageReader::new(inner),
+            partial: HashMap::new(),
+            sequence: HashMap::new(),
+            queue: VecDeque::new(),
+            strict: false,
+            lost_packets: 0,
+        }
     }
 
     /// Strict mode: any damage (garbage, CRC mismatch, a gap in the page
@@ -237,7 +259,9 @@ impl<R: Read> PacketReader<R> {
     /// A packet left incomplete at the end of the input is dropped.
     pub fn next_packet(&mut self) -> Result<Option<Packet>> {
         while self.queue.is_empty() {
-            let Some(page) = self.pages.next_page()? else { return Ok(None) };
+            let Some(page) = self.pages.next_page()? else {
+                return Ok(None);
+            };
             self.take_page(page)?;
         }
         Ok(self.queue.pop_front())
@@ -285,7 +309,13 @@ impl<R: Read> PacketReader<R> {
                     skipping = false;
                     self.lost_packets += 1;
                 } else {
-                    completed.push(Packet { data: std::mem::take(&mut current), serial, granule: None, bos: false, eos: false });
+                    completed.push(Packet {
+                        data: std::mem::take(&mut current),
+                        serial,
+                        granule: None,
+                        bos: false,
+                        eos: false,
+                    });
                 }
             }
         }
@@ -305,7 +335,13 @@ impl<R: Read> PacketReader<R> {
         } else if eos {
             // An EOS page that completes nothing: report the end with an
             // empty packet carrying the granule, so readers can trim.
-            completed.push(Packet { data: Vec::new(), serial, granule: (page.granule != -1).then_some(page.granule), bos, eos });
+            completed.push(Packet {
+                data: Vec::new(),
+                serial,
+                granule: (page.granule != -1).then_some(page.granule),
+                bos,
+                eos,
+            });
         }
         self.queue.extend(completed);
         Ok(())
@@ -331,7 +367,17 @@ pub struct PacketWriter<W: Write> {
 impl<W: Write> PacketWriter<W> {
     /// Write a logical stream with serial number `serial` to `inner`.
     pub fn new(inner: W, serial: u32) -> Self {
-        PacketWriter { inner, serial, sequence: 0, lacing: Vec::new(), body: Vec::new(), granule: -1, continued: false, first: true, page_target: 4096 }
+        PacketWriter {
+            inner,
+            serial,
+            sequence: 0,
+            lacing: Vec::new(),
+            body: Vec::new(),
+            granule: -1,
+            continued: false,
+            first: true,
+            page_target: 4096,
+        }
     }
 
     fn emit(&mut self, eos: bool) -> Result<()> {
@@ -345,7 +391,14 @@ impl<W: Write> PacketWriter<W> {
         if eos {
             flags |= FLAG_EOS;
         }
-        let page = Page { flags, granule: self.granule, serial: self.serial, sequence: self.sequence, lacing: std::mem::take(&mut self.lacing), body: std::mem::take(&mut self.body) };
+        let page = Page {
+            flags,
+            granule: self.granule,
+            serial: self.serial,
+            sequence: self.sequence,
+            lacing: std::mem::take(&mut self.lacing),
+            body: std::mem::take(&mut self.body),
+        };
         self.inner.write_all(&page.to_bytes())?;
         self.sequence += 1;
         self.first = false;
@@ -355,7 +408,13 @@ impl<W: Write> PacketWriter<W> {
 
     /// Append a packet ending at `granule`. `flush` ends the page after it
     /// (as the Vorbis headers require); `eos` ends the stream after it.
-    pub fn write_packet(&mut self, data: &[u8], granule: i64, flush: bool, eos: bool) -> Result<()> {
+    pub fn write_packet(
+        &mut self,
+        data: &[u8],
+        granule: i64,
+        flush: bool,
+        eos: bool,
+    ) -> Result<()> {
         let mut rest = data;
         let mut pushed = false;
         loop {
@@ -414,12 +473,29 @@ mod tests {
 
     #[test]
     fn packets_round_trip_across_pages() {
-        let sizes = [0usize, 1, 254, 255, 256, 510, 70_000, 3, 255 * 255, 255 * 255 + 1, 9];
-        let packets: Vec<Vec<u8>> = sizes.iter().enumerate().map(|(i, &n)| (0..n).map(|j| (i * 31 + j) as u8).collect()).collect();
+        let sizes = [
+            0usize,
+            1,
+            254,
+            255,
+            256,
+            510,
+            70_000,
+            3,
+            255 * 255,
+            255 * 255 + 1,
+            9,
+        ];
+        let packets: Vec<Vec<u8>> = sizes
+            .iter()
+            .enumerate()
+            .map(|(i, &n)| (0..n).map(|j| (i * 31 + j) as u8).collect())
+            .collect();
         let mut w = PacketWriter::new(Vec::new(), 0x1234_5678);
         w.page_target = 1000;
         for (i, p) in packets.iter().enumerate() {
-            w.write_packet(p, i as i64 * 100, i == 0, i == packets.len() - 1).unwrap();
+            w.write_packet(p, i as i64 * 100, i == 0, i == packets.len() - 1)
+                .unwrap();
         }
         let bytes = w.into_inner();
         let mut r = PacketReader::new(&bytes[..]);

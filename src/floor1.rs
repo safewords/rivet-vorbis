@@ -114,7 +114,14 @@ pub fn render_line(x0: i32, y0: i32, x1: i32, y1: i32, v: &mut [i32]) {
 
 impl Floor1 {
     /// Build a configuration, checking it as header decode does.
-    pub fn new(partition_class: Vec<u8>, classes: Vec<Floor1Class>, multiplier: u8, rangebits: u8, x_list: Vec<u32>, codebooks: usize) -> Result<Self> {
+    pub fn new(
+        partition_class: Vec<u8>,
+        classes: Vec<Floor1Class>,
+        multiplier: u8,
+        rangebits: u8,
+        x_list: Vec<u32>,
+        codebooks: usize,
+    ) -> Result<Self> {
         if partition_class.len() > 31 {
             return Err(invalid("floor 1 with more than 31 partitions"));
         }
@@ -127,45 +134,79 @@ impl Floor1 {
             }
         }
         for c in &classes {
-            if !(1..=8).contains(&c.dimensions) || c.subclasses > 3 || c.subclass_books.len() != 1 << c.subclasses {
+            if !(1..=8).contains(&c.dimensions)
+                || c.subclasses > 3
+                || c.subclass_books.len() != 1 << c.subclasses
+            {
                 return Err(invalid("floor 1 class out of range"));
             }
             if c.subclasses > 0 && c.masterbook as usize >= codebooks {
                 return Err(invalid("floor 1 master book does not exist"));
             }
-            if c.subclass_books.iter().any(|&b| b >= codebooks as i16 || b < -1) {
+            if c.subclass_books
+                .iter()
+                .any(|&b| b >= codebooks as i16 || b < -1)
+            {
                 return Err(invalid("floor 1 subclass book does not exist"));
             }
         }
-        let values: usize = 2 + partition_class.iter().map(|&c| classes[c as usize].dimensions as usize).sum::<usize>();
+        let values: usize = 2 + partition_class
+            .iter()
+            .map(|&c| classes[c as usize].dimensions as usize)
+            .sum::<usize>();
         if x_list.len() != values || values > 65 {
-            return Err(invalid("floor 1 X list longer than 65 values or the wrong length"));
+            return Err(invalid(
+                "floor 1 X list longer than 65 values or the wrong length",
+            ));
         }
         if x_list[0] != 0 || x_list[1] != 1 << rangebits {
-            return Err(invalid("floor 1 X list does not start with 0 and 2^rangebits"));
+            return Err(invalid(
+                "floor 1 X list does not start with 0 and 2^rangebits",
+            ));
         }
         let mut sorted: Vec<usize> = (0..values).collect();
         sorted.sort_by_key(|&i| x_list[i]);
         if sorted.windows(2).any(|w| x_list[w[0]] == x_list[w[1]]) {
             return Err(invalid("floor 1 X list values are not unique"));
         }
-        let low = (0..values).map(|i| if i < 2 { 0 } else { low_neighbor(&x_list, i) }).collect();
-        let high = (0..values).map(|i| if i < 2 { 1 } else { high_neighbor(&x_list, i) }).collect();
-        Ok(Floor1 { partition_class, classes, multiplier, rangebits, x_list, sorted, low, high })
+        let low = (0..values)
+            .map(|i| if i < 2 { 0 } else { low_neighbor(&x_list, i) })
+            .collect();
+        let high = (0..values)
+            .map(|i| if i < 2 { 1 } else { high_neighbor(&x_list, i) })
+            .collect();
+        Ok(Floor1 {
+            partition_class,
+            classes,
+            multiplier,
+            rangebits,
+            x_list,
+            sorted,
+            low,
+            high,
+        })
     }
 
     /// Header decode (7.2.2).
     pub(crate) fn read(r: &mut BitReader, codebooks: &[Codebook]) -> Result<Self> {
-        Self::read_fields(r, codebooks.len()).map_err(|_| invalid("setup header ends inside a floor 1 configuration"))?
+        Self::read_fields(r, codebooks.len())
+            .map_err(|_| invalid("setup header ends inside a floor 1 configuration"))?
     }
 
-    fn read_fields(r: &mut BitReader, codebooks: usize) -> std::result::Result<Result<Self>, EndOfPacket> {
+    fn read_fields(
+        r: &mut BitReader,
+        codebooks: usize,
+    ) -> std::result::Result<Result<Self>, EndOfPacket> {
         let partitions = r.read(5)? as usize;
         let mut partition_class = Vec::with_capacity(partitions);
         for _ in 0..partitions {
             partition_class.push(r.read(4)? as u8);
         }
-        let max_class = partition_class.iter().map(|&c| c as i32).max().unwrap_or(-1);
+        let max_class = partition_class
+            .iter()
+            .map(|&c| c as i32)
+            .max()
+            .unwrap_or(-1);
         let mut classes = Vec::new();
         for _ in 0..=max_class {
             let dimensions = r.read(3)? as u8 + 1;
@@ -175,7 +216,12 @@ impl Floor1 {
             for _ in 0..1 << subclasses {
                 subclass_books.push(r.read(8)? as i16 - 1);
             }
-            classes.push(Floor1Class { dimensions, subclasses, masterbook, subclass_books });
+            classes.push(Floor1Class {
+                dimensions,
+                subclasses,
+                masterbook,
+                subclass_books,
+            });
         }
         let multiplier = r.read(2)? as u8 + 1;
         let rangebits = r.read(4)? as u8;
@@ -188,7 +234,14 @@ impl Floor1 {
                 }
             }
         }
-        Ok(Floor1::new(partition_class, classes, multiplier, rangebits, x_list, codebooks))
+        Ok(Floor1::new(
+            partition_class,
+            classes,
+            multiplier,
+            rangebits,
+            x_list,
+            codebooks,
+        ))
     }
 
     pub(crate) fn write(&self, w: &mut BitWriter) {
@@ -196,7 +249,12 @@ impl Floor1 {
         for &c in &self.partition_class {
             w.write(c as u32, 4);
         }
-        let max_class = self.partition_class.iter().map(|&c| c as i32).max().unwrap_or(-1);
+        let max_class = self
+            .partition_class
+            .iter()
+            .map(|&c| c as i32)
+            .max()
+            .unwrap_or(-1);
         for c in &self.classes[..(max_class + 1) as usize] {
             w.write(c.dimensions as u32 - 1, 3);
             w.write(c.subclasses as u32, 2);
@@ -220,7 +278,11 @@ impl Floor1 {
     }
 
     /// Packet decode (7.2.3): `None` when the floor is unused this frame.
-    pub(crate) fn decode(&self, r: &mut BitReader, books: &[Codebook]) -> std::result::Result<Option<Vec<i32>>, EndOfPacket> {
+    pub(crate) fn decode(
+        &self,
+        r: &mut BitReader,
+        books: &[Codebook],
+    ) -> std::result::Result<Option<Vec<i32>>, EndOfPacket> {
         if !r.read_flag()? {
             return Ok(None);
         }
@@ -232,11 +294,19 @@ impl Floor1 {
             let c = &self.classes[class as usize];
             let cbits = c.subclasses as u32;
             let csub = (1u32 << cbits) - 1;
-            let mut cval = if cbits > 0 { books[c.masterbook as usize].decode_scalar(r)? } else { 0 };
+            let mut cval = if cbits > 0 {
+                books[c.masterbook as usize].decode_scalar(r)?
+            } else {
+                0
+            };
             for _ in 0..c.dimensions {
                 let book = c.subclass_books[(cval & csub) as usize];
                 cval >>= cbits;
-                y.push(if book >= 0 { books[book as usize].decode_scalar(r)? as i32 } else { 0 });
+                y.push(if book >= 0 {
+                    books[book as usize].decode_scalar(r)? as i32
+                } else {
+                    0
+                });
             }
         }
         Ok(Some(y))
@@ -256,17 +326,31 @@ impl Floor1 {
         for i in 2..n {
             let lo = self.low[i];
             let hi = self.high[i];
-            let predicted = render_point(self.x_list[lo] as i32, fin[lo], self.x_list[hi] as i32, fin[hi], self.x_list[i] as i32);
+            let predicted = render_point(
+                self.x_list[lo] as i32,
+                fin[lo],
+                self.x_list[hi] as i32,
+                fin[hi],
+                self.x_list[i] as i32,
+            );
             let val = y[i];
             let highroom = range - predicted;
             let lowroom = predicted;
-            let room = if highroom < lowroom { highroom * 2 } else { lowroom * 2 };
+            let room = if highroom < lowroom {
+                highroom * 2
+            } else {
+                lowroom * 2
+            };
             if val != 0 {
                 step2[lo] = true;
                 step2[hi] = true;
                 step2[i] = true;
                 fin[i] = if val >= room {
-                    if highroom > lowroom { val - lowroom + predicted } else { predicted - val + highroom - 1 }
+                    if highroom > lowroom {
+                        val - lowroom + predicted
+                    } else {
+                        predicted - val + highroom - 1
+                    }
                 } else if val & 1 == 1 {
                     predicted - (val + 1) / 2
                 } else {
@@ -310,7 +394,10 @@ impl Floor1 {
     /// The linear floor curve over `n` positions for decoded `y` values.
     pub fn synthesize(&self, y: &[i32], n: usize) -> Vec<f32> {
         let (fin, step2) = self.amplitudes(y);
-        self.curve(&fin, &step2, n).into_iter().map(|v| FLOOR1_INVERSE_DB[v.clamp(0, 255) as usize]).collect()
+        self.curve(&fin, &step2, n)
+            .into_iter()
+            .map(|v| FLOOR1_INVERSE_DB[v.clamp(0, 255) as usize])
+            .collect()
     }
 
     /// The value to code at post `i` (list order, from 2) so that its final
@@ -321,7 +408,11 @@ impl Floor1 {
         let predicted = self.predict(fin, i);
         let highroom = range - predicted;
         let lowroom = predicted;
-        let room = if highroom < lowroom { highroom * 2 } else { lowroom * 2 };
+        let room = if highroom < lowroom {
+            highroom * 2
+        } else {
+            lowroom * 2
+        };
         let d = target - predicted;
         if d == 0 {
             return 0;
@@ -341,7 +432,13 @@ impl Floor1 {
     pub fn predict(&self, fin: &[i32], i: usize) -> i32 {
         let lo = self.low[i];
         let hi = self.high[i];
-        render_point(self.x_list[lo] as i32, fin[lo], self.x_list[hi] as i32, fin[hi], self.x_list[i] as i32)
+        render_point(
+            self.x_list[lo] as i32,
+            fin[lo],
+            self.x_list[hi] as i32,
+            fin[hi],
+            self.x_list[i] as i32,
+        )
     }
 
     /// The post order of `x_list` sorted by X, for the encoder.
@@ -356,7 +453,12 @@ mod tests {
 
     fn floor(x_list: Vec<u32>, mult: u8, rangebits: u8) -> Floor1 {
         let extra = x_list.len() - 2;
-        let class = Floor1Class { dimensions: 1, subclasses: 0, masterbook: 0, subclass_books: vec![0] };
+        let class = Floor1Class {
+            dimensions: 1,
+            subclasses: 0,
+            masterbook: 0,
+            subclass_books: vec![0],
+        };
         Floor1::new(vec![0; extra], vec![class], mult, rangebits, x_list, 1).unwrap()
     }
 
@@ -385,13 +487,24 @@ mod tests {
     /// first point and is monotonic between its ends.
     #[test]
     fn render_line_tracks_the_exact_line() {
-        for (x0, y0, x1, y1) in [(0, 0, 10, 3), (0, 100, 7, 3), (5, 40, 300, 41), (3, 200, 4, 0), (0, 0, 128, 255), (10, 50, 20, 50)] {
+        for (x0, y0, x1, y1) in [
+            (0, 0, 10, 3),
+            (0, 100, 7, 3),
+            (5, 40, 300, 41),
+            (3, 200, 4, 0),
+            (0, 0, 128, 255),
+            (10, 50, 20, 50),
+        ] {
             let mut v = vec![-1; x1 as usize + 1];
             render_line(x0, y0, x1, y1, &mut v);
             assert_eq!(v[x0 as usize], y0);
             for x in x0..x1 {
                 let exact = y0 as f64 + (y1 - y0) as f64 * (x - x0) as f64 / (x1 - x0) as f64;
-                assert!((v[x as usize] as f64 - exact).abs() < 1.0, "({x0},{y0})-({x1},{y1}) at {x}: {} vs {exact}", v[x as usize]);
+                assert!(
+                    (v[x as usize] as f64 - exact).abs() < 1.0,
+                    "({x0},{y0})-({x1},{y1}) at {x}: {} vs {exact}",
+                    v[x as usize]
+                );
                 if x > x0 {
                     let step = v[x as usize] - v[x as usize - 1];
                     assert!(step * (y1 - y0).signum() >= 0);
@@ -415,7 +528,10 @@ mod tests {
                         let val = fl.encode_value(&fin, 2, target);
                         assert!(val >= 0 && val < range, "val {val}");
                         let (got, step2) = fl.amplitudes(&[y0, y1, val]);
-                        assert_eq!(got[2], target, "mult {mult} y0 {y0} y1 {y1} target {target} val {val}");
+                        assert_eq!(
+                            got[2], target,
+                            "mult {mult} y0 {y0} y1 {y1} target {target} val {val}"
+                        );
                         assert_eq!(step2[2], val != 0);
                     }
                 }
@@ -461,7 +577,12 @@ mod tests {
 
     #[test]
     fn setups_are_checked() {
-        let class = Floor1Class { dimensions: 1, subclasses: 0, masterbook: 0, subclass_books: vec![0] };
+        let class = Floor1Class {
+            dimensions: 1,
+            subclasses: 0,
+            masterbook: 0,
+            subclass_books: vec![0],
+        };
         // Duplicate X.
         assert!(Floor1::new(vec![0], vec![class.clone()], 1, 7, vec![0, 128, 128], 1).is_err());
         // Book out of range.

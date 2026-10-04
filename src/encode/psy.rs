@@ -42,14 +42,22 @@ impl Psy {
             }
         }
         band_start.push(half);
-        let band_bark = band_start.windows(2).map(|w| bark((w[0] + w[1]) as f64 / 2.0 * bin_hz)).collect();
+        let band_bark = band_start
+            .windows(2)
+            .map(|w| bark((w[0] + w[1]) as f64 / 2.0 * bin_hz))
+            .collect();
         let ath = (0..half)
             .map(|k| {
                 let f = (k as f64 + 0.5) * bin_hz;
                 10f64.powf((ath_db(f).min(110.0) - 96.0) / 10.0)
             })
             .collect();
-        Psy { half, band_start, band_bark, ath }
+        Psy {
+            half,
+            band_start,
+            band_bark,
+            ath,
+        }
     }
 
     /// The noise power each bin can carry unheard, scaled by `adjust_db`
@@ -65,7 +73,9 @@ impl Psy {
             energy[b] = power[s..e].iter().sum();
             // Tonality: the band's strongest bin against the mean power of
             // a neighbourhood around it.
-            let (peak_k, peak) = (s..e).map(|k| (k, power[k])).fold((s, 0.0), |a, b| if b.1 > a.1 { b } else { a });
+            let (peak_k, peak) = (s..e)
+                .map(|k| (k, power[k]))
+                .fold((s, 0.0), |a, b| if b.1 > a.1 { b } else { a });
             let lo = peak_k.saturating_sub(8);
             let hi = (peak_k + 9).min(half);
             let mean = power[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;

@@ -70,7 +70,14 @@ impl Identification {
         if !framing {
             return Err(invalid("identification header framing bit unset"));
         }
-        Ok(Identification { channels, sample_rate, bitrate_maximum, bitrate_nominal, bitrate_minimum, blocksize: [1 << b0, 1 << b1] })
+        Ok(Identification {
+            channels,
+            sample_rate,
+            bitrate_maximum,
+            bitrate_nominal,
+            bitrate_minimum,
+            blocksize: [1 << b0, 1 << b1],
+        })
     }
 
     /// Encode the first header packet (30 bytes).
@@ -110,19 +117,25 @@ impl Comments {
         let body = &packet[7..];
         let mut pos = 0usize;
         let u32_at = |pos: &mut usize| -> Result<u32> {
-            let b = body.get(*pos..*pos + 4).ok_or_else(|| invalid("comment header ends early"))?;
+            let b = body
+                .get(*pos..*pos + 4)
+                .ok_or_else(|| invalid("comment header ends early"))?;
             *pos += 4;
             Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         };
         let vendor_len = u32_at(&mut pos)? as usize;
-        let vendor = body.get(pos..pos.saturating_add(vendor_len)).ok_or_else(|| invalid("comment header ends early"))?;
+        let vendor = body
+            .get(pos..pos.saturating_add(vendor_len))
+            .ok_or_else(|| invalid("comment header ends early"))?;
         pos += vendor_len;
         let vendor = String::from_utf8_lossy(vendor).into_owned();
         let count = u32_at(&mut pos)?;
         let mut comments = Vec::new();
         for _ in 0..count {
             let len = u32_at(&mut pos)? as usize;
-            let c = body.get(pos..pos.saturating_add(len)).ok_or_else(|| invalid("comment header ends early"))?;
+            let c = body
+                .get(pos..pos.saturating_add(len))
+                .ok_or_else(|| invalid("comment header ends early"))?;
             pos += len;
             comments.push(String::from_utf8_lossy(c).into_owned());
         }
@@ -254,7 +267,11 @@ impl Setup {
             if r.read(16).map_err(eop)? != 0 {
                 return Err(invalid("mapping type other than 0"));
             }
-            let submaps = if r.read_flag().map_err(eop)? { r.read(4).map_err(eop)? + 1 } else { 1 };
+            let submaps = if r.read_flag().map_err(eop)? {
+                r.read(4).map_err(eop)? + 1
+            } else {
+                1
+            };
             let mut coupling = Vec::new();
             if r.read_flag().map_err(eop)? {
                 let steps = r.read(8).map_err(eop)? + 1;
@@ -291,7 +308,12 @@ impl Setup {
                 submap_floor.push(f as u8);
                 submap_residue.push(res as u8);
             }
-            mappings.push(Mapping { coupling, mux, submap_floor, submap_residue });
+            mappings.push(Mapping {
+                coupling,
+                mux,
+                submap_floor,
+                submap_residue,
+            });
         }
         let count = r.read(6).map_err(eop)? + 1;
         let mut modes = Vec::new();
@@ -303,12 +325,21 @@ impl Setup {
             if windowtype != 0 || transformtype != 0 || mapping as usize >= mappings.len() {
                 return Err(invalid("invalid mode"));
             }
-            modes.push(Mode { blockflag, mapping: mapping as u8 });
+            modes.push(Mode {
+                blockflag,
+                mapping: mapping as u8,
+            });
         }
         if !r.read_flag().map_err(eop)? {
             return Err(invalid("setup header framing bit unset"));
         }
-        Ok(Setup { codebooks, floors, residues, mappings, modes })
+        Ok(Setup {
+            codebooks,
+            floors,
+            residues,
+            mappings,
+            modes,
+        })
     }
 
     /// Encode the third header packet for a stream of `channels` channels.
@@ -384,14 +415,21 @@ impl Setup {
 /// the lacing of every packet but the last, then the packets. Vorbis has
 /// exactly three.
 pub fn split_xiph_lacing(bytes: &[u8]) -> Result<[&[u8]; 3]> {
-    let (&count, mut rest) = bytes.split_first().ok_or_else(|| invalid("empty Xiph-laced header buffer"))?;
+    let (&count, mut rest) = bytes
+        .split_first()
+        .ok_or_else(|| invalid("empty Xiph-laced header buffer"))?;
     if count != 2 {
-        return Err(invalid(format!("Xiph lacing holds {} packets, not 3", count as usize + 1)));
+        return Err(invalid(format!(
+            "Xiph lacing holds {} packets, not 3",
+            count as usize + 1
+        )));
     }
     let mut lens = [0usize; 2];
     for len in lens.iter_mut() {
         loop {
-            let (&b, r) = rest.split_first().ok_or_else(|| invalid("Xiph lacing ends inside a length"))?;
+            let (&b, r) = rest
+                .split_first()
+                .ok_or_else(|| invalid("Xiph lacing ends inside a length"))?;
             rest = r;
             *len += b as usize;
             if b != 255 {
@@ -430,7 +468,14 @@ mod tests {
 
     #[test]
     fn identification_round_trips_and_is_30_bytes() {
-        let id = Identification { channels: 2, sample_rate: 44100, bitrate_maximum: 0, bitrate_nominal: 128000, bitrate_minimum: 0, blocksize: [256, 2048] };
+        let id = Identification {
+            channels: 2,
+            sample_rate: 44100,
+            bitrate_maximum: 0,
+            bitrate_nominal: 128000,
+            bitrate_minimum: 0,
+            blocksize: [256, 2048],
+        };
         let bytes = id.write();
         assert_eq!(bytes.len(), 30);
         assert_eq!(Identification::read(&bytes).unwrap(), id);
@@ -447,14 +492,24 @@ mod tests {
 
     #[test]
     fn comments_round_trip() {
-        let c = Comments { vendor: "rivet-vorbis".into(), comments: vec!["TITLE=Gr\u{fc}n".into(), "ARTIST=a".into(), "artist=b".into()] };
+        let c = Comments {
+            vendor: "rivet-vorbis".into(),
+            comments: vec![
+                "TITLE=Gr\u{fc}n".into(),
+                "ARTIST=a".into(),
+                "artist=b".into(),
+            ],
+        };
         let bytes = c.write();
         let back = Comments::read(&bytes).unwrap();
         assert_eq!(back, c);
         assert_eq!(back.get("Artist").collect::<Vec<_>>(), vec!["a", "b"]);
         // Truncated: an error strictly, empty leniently.
         assert!(Comments::read(&bytes[..bytes.len() - 3]).is_err());
-        assert_eq!(Comments::read_lenient(&bytes[..bytes.len() - 3]).unwrap(), Comments::default());
+        assert_eq!(
+            Comments::read_lenient(&bytes[..bytes.len() - 3]).unwrap(),
+            Comments::default()
+        );
         assert!(Comments::read_lenient(&[5, b'v']).is_err());
     }
 

@@ -56,7 +56,14 @@ impl Floor0 {
         if bark_map_size == 0 {
             return Err(invalid("floor 0 bark map size of zero"));
         }
-        Ok(Floor0 { order, rate, bark_map_size, amplitude_bits, amplitude_offset, books })
+        Ok(Floor0 {
+            order,
+            rate,
+            bark_map_size,
+            amplitude_bits,
+            amplitude_offset,
+            books,
+        })
     }
 
     pub(crate) fn write(&self, w: &mut BitWriter) {
@@ -73,14 +80,20 @@ impl Floor0 {
 
     /// Packet decode (6.2.2): `None` for an unused floor. A book number past
     /// the list is an undecodable packet, reported as `Err(Some(..))`.
-    pub(crate) fn decode(&self, r: &mut BitReader, books: &[Codebook]) -> std::result::Result<Option<Floor0Frame>, Floor0Error> {
+    pub(crate) fn decode(
+        &self,
+        r: &mut BitReader,
+        books: &[Codebook],
+    ) -> std::result::Result<Option<Floor0Frame>, Floor0Error> {
         let amplitude = r.read(self.amplitude_bits as u32)?;
         if amplitude == 0 {
             return Ok(None);
         }
         let booknumber = r.read(ilog(self.books.len() as i64))? as usize;
         if booknumber >= self.books.len() {
-            return Err(Floor0Error::Undecodable("floor 0 book number past the book list"));
+            return Err(Floor0Error::Undecodable(
+                "floor 0 book number past the book list",
+            ));
         }
         let book = &books[self.books[booknumber] as usize];
         if !book.has_lookup() || book.dimensions == 0 {
@@ -101,7 +114,10 @@ impl Floor0 {
             }
             last = coefficients[start + dim - 1];
         }
-        Ok(Some(Floor0Frame { amplitude, coefficients }))
+        Ok(Some(Floor0Frame {
+            amplitude,
+            coefficients,
+        }))
     }
 
     /// The Bark map of 6.2.3 for a vector of `n` values.
@@ -161,12 +177,18 @@ impl Floor0 {
         let n = map.len();
         let max = ((1u64 << self.amplitude_bits) - 1) as f64;
         let offset = self.amplitude_offset as f64;
-        let cos: Vec<f64> = frame.coefficients.iter().map(|&c| (c as f64).cos()).collect();
+        let cos: Vec<f64> = frame
+            .coefficients
+            .iter()
+            .map(|&c| (c as f64).cos())
+            .collect();
         let mut i = 0;
         while i < n {
             let omega = std::f64::consts::PI * map[i] as f64 / self.bark_map_size as f64;
             let pq = self.p_plus_q_cos(&cos, omega.cos());
-            let value = (0.11512925 * (frame.amplitude as f64 * offset / (max * pq.sqrt()) - offset)).exp() as f32;
+            let value = (0.11512925
+                * (frame.amplitude as f64 * offset / (max * pq.sqrt()) - offset))
+                .exp() as f32;
             // A coefficient set whose response has a zero (p + q = 0) has no
             // finite floor there; silence it rather than emit infinity.
             let value = if value.is_finite() { value } else { 0.0 };
@@ -215,11 +237,23 @@ mod tests {
     /// factor for even order). An independent route to 6.2.3's p + q.
     fn lpc_power(lsp: &[f64], w: f64) -> f64 {
         let order = lsp.len();
-        let mut p = if order.is_multiple_of(2) { vec![1.0, -1.0] } else { vec![1.0, 0.0, -1.0] };
-        let mut q = if order.is_multiple_of(2) { vec![1.0, 1.0] } else { vec![1.0] };
+        let mut p = if order.is_multiple_of(2) {
+            vec![1.0, -1.0]
+        } else {
+            vec![1.0, 0.0, -1.0]
+        };
+        let mut q = if order.is_multiple_of(2) {
+            vec![1.0, 1.0]
+        } else {
+            vec![1.0]
+        };
         for (j, &a) in lsp.iter().enumerate() {
             let f = [1.0, -2.0 * a.cos(), 1.0];
-            if j % 2 == 1 { p = mul(&p, &f) } else { q = mul(&q, &f) }
+            if j % 2 == 1 {
+                p = mul(&p, &f)
+            } else {
+                q = mul(&q, &f)
+            }
         }
         let len = p.len().max(q.len());
         p.resize(len, 0.0);
@@ -236,22 +270,41 @@ mod tests {
     #[test]
     fn p_plus_q_is_the_lpc_power_response() {
         for order in [1usize, 2, 3, 4, 7, 10, 16, 21] {
-            let lsp: Vec<f64> = (0..order).map(|j| PI * (j as f64 + 0.7) / (order as f64 + 1.0)).collect();
+            let lsp: Vec<f64> = (0..order)
+                .map(|j| PI * (j as f64 + 0.7) / (order as f64 + 1.0))
+                .collect();
             let coefficients: Vec<f32> = lsp.iter().map(|&v| v as f32).collect();
-            let fl = Floor0 { order: order as u8, rate: 44100, bark_map_size: 256, amplitude_bits: 6, amplitude_offset: 100, books: vec![0] };
+            let fl = Floor0 {
+                order: order as u8,
+                rate: 44100,
+                bark_map_size: 256,
+                amplitude_bits: 6,
+                amplitude_offset: 100,
+                books: vec![0],
+            };
             let lsp32: Vec<f64> = coefficients.iter().map(|&v| v as f64).collect();
             for k in 0..50 {
                 let w = PI * (k as f64 + 0.31) / 50.0;
                 let want = lpc_power(&lsp32, w);
                 let got = fl.p_plus_q(&coefficients, w);
-                assert!((got - want).abs() <= 1e-9 * want.max(1e-12) + 1e-12, "order {order} w {w}: {got} vs {want}");
+                assert!(
+                    (got - want).abs() <= 1e-9 * want.max(1e-12) + 1e-12,
+                    "order {order} w {w}: {got} vs {want}"
+                );
             }
         }
     }
 
     #[test]
     fn bark_map_is_monotonic_and_bounded() {
-        let fl = Floor0 { order: 16, rate: 44100, bark_map_size: 256, amplitude_bits: 6, amplitude_offset: 100, books: vec![0] };
+        let fl = Floor0 {
+            order: 16,
+            rate: 44100,
+            bark_map_size: 256,
+            amplitude_bits: 6,
+            amplitude_offset: 100,
+            books: vec![0],
+        };
         for n in [128, 1024] {
             let map = fl.bark_map(n);
             assert_eq!(map[0], 0);
@@ -265,14 +318,27 @@ mod tests {
     /// constant over runs of equal map values.
     #[test]
     fn curve_follows_the_formula() {
-        let fl = Floor0 { order: 4, rate: 22050, bark_map_size: 128, amplitude_bits: 6, amplitude_offset: 80, books: vec![0] };
-        let frame = Floor0Frame { amplitude: 40, coefficients: vec![0.3, 0.9, 1.7, 2.6] };
+        let fl = Floor0 {
+            order: 4,
+            rate: 22050,
+            bark_map_size: 128,
+            amplitude_bits: 6,
+            amplitude_offset: 80,
+            books: vec![0],
+        };
+        let frame = Floor0Frame {
+            amplitude: 40,
+            coefficients: vec![0.3, 0.9, 1.7, 2.6],
+        };
         let map = fl.bark_map(256);
         let mut out = vec![0f32; 256];
         fl.synthesize(&frame, &map, &mut out);
         for i in 0..256 {
             let w = PI * map[i] as f64 / 128.0;
-            let pq = lpc_power(&[0.3f32 as f64, 0.9f32 as f64, 1.7f32 as f64, 2.6f32 as f64], w);
+            let pq = lpc_power(
+                &[0.3f32 as f64, 0.9f32 as f64, 1.7f32 as f64, 2.6f32 as f64],
+                w,
+            );
             let want = (0.11512925 * (40.0 * 80.0 / (63.0 * pq.sqrt()) - 80.0)).exp();
             assert!((out[i] as f64 / want - 1.0).abs() < 1e-5, "bin {i}");
         }

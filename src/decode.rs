@@ -133,7 +133,10 @@ impl Decoder {
         if r.read(1).ok()? != 0 {
             return None;
         }
-        let mode = self.setup.modes.get(r.read(self.mode_bits).ok()? as usize)?;
+        let mode = self
+            .setup
+            .modes
+            .get(r.read(self.mode_bits).ok()? as usize)?;
         Some(self.ident.blocksize[mode.blockflag as usize] as usize)
     }
 
@@ -153,11 +156,15 @@ impl Decoder {
         let mut r = BitReader::new(packet);
         // 4.3.1: packet type, mode, window flags. End-of-packet here
         // discards the packet.
-        let Ok(packet_type) = r.read(1) else { return self.discard("empty or truncated audio packet") };
+        let Ok(packet_type) = r.read(1) else {
+            return self.discard("empty or truncated audio packet");
+        };
         if packet_type != 0 {
             return self.discard("non-audio packet among audio packets");
         }
-        let Ok(mode_number) = r.read(self.mode_bits) else { return self.discard("audio packet truncated in its mode") };
+        let Ok(mode_number) = r.read(self.mode_bits) else {
+            return self.discard("audio packet truncated in its mode");
+        };
         let Some(mode) = self.setup.modes.get(mode_number as usize).cloned() else {
             return self.discard("audio packet names a missing mode");
         };
@@ -215,7 +222,10 @@ impl Decoder {
         let mut spectra = vec![vec![0f32; half]; ch];
         if !lost {
             // 4.3.3: nonzero vector propagate.
-            let mut no_residue: Vec<bool> = floors.iter().map(|f| matches!(f, FloorData::Unused)).collect();
+            let mut no_residue: Vec<bool> = floors
+                .iter()
+                .map(|f| matches!(f, FloorData::Unused))
+                .collect();
             for &(m, a) in &mapping.coupling {
                 if !no_residue[m as usize] || !no_residue[a as usize] {
                     no_residue[m as usize] = false;
@@ -225,13 +235,18 @@ impl Decoder {
             // 4.3.4: residues, by submap.
             let mut truncated = false;
             for (s, &residue_number) in mapping.submap_residue.iter().enumerate() {
-                let members: Vec<usize> = (0..ch).filter(|&j| mapping.mux[j] as usize == s).collect();
+                let members: Vec<usize> =
+                    (0..ch).filter(|&j| mapping.mux[j] as usize == s).collect();
                 if members.is_empty() {
                     continue;
                 }
                 let flags: Vec<bool> = members.iter().map(|&j| no_residue[j]).collect();
                 let mut vectors = vec![vec![0f32; half]; members.len()];
-                if !truncated && setup.residues[residue_number as usize].decode(books, &mut r, &flags, &mut vectors).is_err() {
+                if !truncated
+                    && setup.residues[residue_number as usize]
+                        .decode(books, &mut r, &flags, &mut vectors)
+                        .is_err()
+                {
                     truncated = true;
                 }
                 for (v, &j) in vectors.into_iter().zip(&members) {
@@ -246,7 +261,11 @@ impl Decoder {
                 let (m, a) = (m as usize, a as usize);
                 let (lo, hi) = (m.min(a), m.max(a));
                 let (left, right) = spectra.split_at_mut(hi);
-                let (vm, va) = if m < a { (&mut left[lo], &mut right[0]) } else { (&mut right[0], &mut left[lo]) };
+                let (vm, va) = if m < a {
+                    (&mut left[lo], &mut right[0])
+                } else {
+                    (&mut right[0], &mut left[lo])
+                };
                 for (x, y) in vm.iter_mut().zip(va.iter_mut()) {
                     let (nm, na) = decouple(*x, *y);
                     *x = nm;
@@ -265,7 +284,9 @@ impl Decoder {
                         }
                     }
                     (FloorData::Zero(frame), Floor::Zero(f)) => {
-                        let map = &self.floor0_maps[floor_number].as_ref().expect("floor 0 map")[long as usize];
+                        let map = &self.floor0_maps[floor_number]
+                            .as_ref()
+                            .expect("floor 0 map")[long as usize];
                         let mut curve = vec![0f32; half];
                         f.synthesize(frame, map, &mut curve);
                         for (s, c) in spectra[i].iter_mut().zip(&curve) {
@@ -302,7 +323,11 @@ impl Decoder {
                             .map(|i| {
                                 let a = p.get(np / 2 + i).copied().unwrap_or(0.0);
                                 let j = i as i64 + shift;
-                                let b = if j >= 0 { c.get(j as usize).copied().unwrap_or(0.0) } else { 0.0 };
+                                let b = if j >= 0 {
+                                    c.get(j as usize).copied().unwrap_or(0.0)
+                                } else {
+                                    0.0
+                                };
                                 a + b
                             })
                             .collect()
@@ -334,6 +359,9 @@ pub fn interleave(planar: &[Vec<f32>]) -> Vec<f32> {
 
 impl std::fmt::Debug for Decoder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Decoder").field("ident", &self.ident).field("strict", &self.strict).finish_non_exhaustive()
+        f.debug_struct("Decoder")
+            .field("ident", &self.ident)
+            .field("strict", &self.strict)
+            .finish_non_exhaustive()
     }
 }

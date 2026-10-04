@@ -4,7 +4,9 @@
 //! come back with an SNR that rises with the quality setting.
 
 use vorbis::ogg::{FLAG_BOS, FLAG_EOS, PacketReader, PageReader};
-use vorbis::{Comments, Encoder, EncoderConfig, Identification, Setup, decode_ogg_strict, encode_ogg};
+use vorbis::{
+    Comments, Encoder, EncoderConfig, Identification, Setup, decode_ogg_strict, encode_ogg,
+};
 
 /// A deterministic test signal: harmonic tones with vibrato, filtered
 /// noise, a few clicks and a stretch of silence, per channel slightly
@@ -27,10 +29,14 @@ fn signal_with_noise(rate: u32, channels: usize, seconds: f64, noise: f64) -> Ve
     for i in 0..n {
         let t = i as f64 / rate as f64;
         for c in 0..channels {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let white = ((seed >> 33) as f64 / (1u64 << 31) as f64) * 2.0 - 1.0;
             lp[c] = 0.9 * lp[c] + 0.1 * white;
-            let f0 = 220.0 * (1.0 + c as f64 * 0.25) * (1.0 + 0.003 * (2.0 * std::f64::consts::PI * 5.0 * t).sin());
+            let f0 = 220.0
+                * (1.0 + c as f64 * 0.25)
+                * (1.0 + 0.003 * (2.0 * std::f64::consts::PI * 5.0 * t).sin());
             let mut tone = 0.0;
             for h in 1..8 {
                 tone += (2.0 * std::f64::consts::PI * f0 * h as f64 * t).sin() / h as f64;
@@ -38,7 +44,8 @@ fn signal_with_noise(rate: u32, channels: usize, seconds: f64, noise: f64) -> Ve
             let envelope = 0.5 + 0.5 * (2.0 * std::f64::consts::PI * 0.7 * t).sin().abs();
             let mut v = 0.18 * tone * envelope + noise * lp[c];
             if lfe == Some(c) {
-                v = 0.3 * (2.0 * std::f64::consts::PI * 50.0 * t).sin() + 0.2 * (2.0 * std::f64::consts::PI * 80.0 * t).sin();
+                v = 0.3 * (2.0 * std::f64::consts::PI * 50.0 * t).sin()
+                    + 0.2 * (2.0 * std::f64::consts::PI * 80.0 * t).sin();
             }
             // Clicks every 0.6 s, a decaying burst.
             let since = t % 0.6;
@@ -62,11 +69,31 @@ struct Outcome {
 }
 
 fn round_trip(rate: u32, channels: u8, quality: f32, seconds: f64) -> Outcome {
-    round_trip_signal(rate, channels, quality, seconds, signal(rate, channels as usize, seconds))
+    round_trip_signal(
+        rate,
+        channels,
+        quality,
+        seconds,
+        signal(rate, channels as usize, seconds),
+    )
 }
 
-fn round_trip_signal(rate: u32, channels: u8, quality: f32, seconds: f64, input: Vec<f32>) -> Outcome {
-    let config = EncoderConfig { sample_rate: rate, channels, quality, comments: vec![("TITLE".into(), "round trip".into()), ("ARTIST".into(), "rivet".into())] };
+fn round_trip_signal(
+    rate: u32,
+    channels: u8,
+    quality: f32,
+    seconds: f64,
+    input: Vec<f32>,
+) -> Outcome {
+    let config = EncoderConfig {
+        sample_rate: rate,
+        channels,
+        quality,
+        comments: vec![
+            ("TITLE".into(), "round trip".into()),
+            ("ARTIST".into(), "rivet".into()),
+        ],
+    };
     let bytes = encode_ogg(&config, &input).unwrap();
 
     // Page layout of appendix A.2: the identification header alone on a
@@ -86,7 +113,9 @@ fn round_trip_signal(rate: u32, channels: u8, quality: f32, seconds: f64, input:
 
     // Headers parse, and re-serialise to the same bytes.
     let mut packets = PacketReader::new(&bytes[..]);
-    let h: Vec<Vec<u8>> = (0..3).map(|_| packets.next_packet().unwrap().unwrap().data).collect();
+    let h: Vec<Vec<u8>> = (0..3)
+        .map(|_| packets.next_packet().unwrap().unwrap().data)
+        .collect();
     let ident = Identification::read(&h[0]).unwrap();
     assert_eq!(ident.write(), h[0]);
     assert_eq!((ident.channels, ident.sample_rate), (channels, rate));
@@ -123,12 +152,18 @@ fn round_trip_signal(rate: u32, channels: u8, quality: f32, seconds: f64, input:
     n += encoder.finish().unwrap().len();
     assert!(n > 0 || input.is_empty());
     let audio_bytes = bytes.len() as f64;
-    Outcome { snr_db: worst, kbps: audio_bytes * 8.0 / seconds / 1000.0, blocks: count_blocks(&bytes, channels) }
+    Outcome {
+        snr_db: worst,
+        kbps: audio_bytes * 8.0 / seconds / 1000.0,
+        blocks: count_blocks(&bytes, channels),
+    }
 }
 
 fn count_blocks(bytes: &[u8], _channels: u8) -> [u64; 2] {
     let mut packets = PacketReader::new(bytes);
-    let h: Vec<Vec<u8>> = (0..3).map(|_| packets.next_packet().unwrap().unwrap().data).collect();
+    let h: Vec<Vec<u8>> = (0..3)
+        .map(|_| packets.next_packet().unwrap().unwrap().data)
+        .collect();
     let decoder = vorbis::Decoder::new(&h[0], &h[1], &h[2]).unwrap();
     let mut blocks = [0u64; 2];
     while let Some(p) = packets.next_packet().unwrap() {
@@ -140,23 +175,50 @@ fn count_blocks(bytes: &[u8], _channels: u8) -> [u64; 2] {
 
 #[test]
 fn stereo_quality_ladder() {
-    println!("{:>8} {:>6} {:>4} {:>8} {:>8} {:>12}", "rate", "ch", "q", "SNR dB", "kb/s", "short/long");
+    println!(
+        "{:>8} {:>6} {:>4} {:>8} {:>8} {:>12}",
+        "rate", "ch", "q", "SNR dB", "kb/s", "short/long"
+    );
     let mut last_snr = f64::NEG_INFINITY;
     for q in [-1.0f32, 0.0, 2.0, 4.0, 6.0, 8.0, 10.0] {
         let o = round_trip(44100, 2, q, 4.0);
-        println!("{:>8} {:>6} {:>4} {:>8.2} {:>8.1} {:>6}/{}", 44100, 2, q, o.snr_db, o.kbps, o.blocks[0], o.blocks[1]);
+        println!(
+            "{:>8} {:>6} {:>4} {:>8.2} {:>8.1} {:>6}/{}",
+            44100, 2, q, o.snr_db, o.kbps, o.blocks[0], o.blocks[1]
+        );
         assert!(o.snr_db > last_snr - 0.5, "SNR should rise with quality");
         last_snr = o.snr_db;
-        assert!(o.blocks[0] > 0 && o.blocks[1] > 0, "both block sizes in use");
+        assert!(
+            o.blocks[0] > 0 && o.blocks[1] > 0,
+            "both block sizes in use"
+        );
     }
     assert!(last_snr > 20.0);
 }
 
 #[test]
 fn layouts_and_rates() {
-    for (rate, ch, q) in [(22050, 1, 3.0f32), (32000, 1, 6.0), (48000, 1, 0.0), (22050, 2, 5.0), (32000, 2, 2.0), (48000, 2, 8.0), (44100, 6, 5.0), (48000, 6, 2.0), (22050, 6, 8.0), (44100, 3, 4.0), (44100, 4, 4.0), (44100, 5, 4.0), (44100, 7, 4.0), (48000, 8, 4.0)] {
+    for (rate, ch, q) in [
+        (22050, 1, 3.0f32),
+        (32000, 1, 6.0),
+        (48000, 1, 0.0),
+        (22050, 2, 5.0),
+        (32000, 2, 2.0),
+        (48000, 2, 8.0),
+        (44100, 6, 5.0),
+        (48000, 6, 2.0),
+        (22050, 6, 8.0),
+        (44100, 3, 4.0),
+        (44100, 4, 4.0),
+        (44100, 5, 4.0),
+        (44100, 7, 4.0),
+        (48000, 8, 4.0),
+    ] {
         let o = round_trip(rate, ch, q, 2.0);
-        println!("{rate:>8} {ch:>6} {q:>4} {:>8.2} {:>8.1} {:>6}/{}", o.snr_db, o.kbps, o.blocks[0], o.blocks[1]);
+        println!(
+            "{rate:>8} {ch:>6} {q:>4} {:>8.2} {:>8.1} {:>6}/{}",
+            o.snr_db, o.kbps, o.blocks[0], o.blocks[1]
+        );
         assert!(o.snr_db > 6.0, "{rate} Hz {ch} ch q{q}: {} dB", o.snr_db);
     }
 }
@@ -164,7 +226,9 @@ fn layouts_and_rates() {
 #[test]
 fn short_and_empty_inputs() {
     for frames in [0usize, 1, 100, 255, 256, 1000, 2047, 2048, 2049, 5000] {
-        let input: Vec<f32> = (0..frames * 2).map(|i| ((i as f32) * 0.01).sin() * 0.5).collect();
+        let input: Vec<f32> = (0..frames * 2)
+            .map(|i| ((i as f32) * 0.01).sin() * 0.5)
+            .collect();
         let bytes = encode_ogg(&EncoderConfig::default(), &input).unwrap();
         let decoded = decode_ogg_strict(&bytes).unwrap();
         assert_eq!(decoded.samples[0].len(), frames, "{frames} frames");
@@ -179,7 +243,10 @@ fn tonal_quality_ladder() {
         for q in [-1.0f32, 2.0, 5.0, 8.0, 10.0] {
             let input = signal_with_noise(44100, ch as usize, 3.0, 0.0);
             let o = round_trip_signal(44100, ch, q, 3.0, input);
-            println!("tonal {:>6} {ch:>3} {q:>4} {:>8.2} {:>8.1} {:>6}/{}", 44100, o.snr_db, o.kbps, o.blocks[0], o.blocks[1]);
+            println!(
+                "tonal {:>6} {ch:>3} {q:>4} {:>8.2} {:>8.1} {:>6}/{}",
+                44100, o.snr_db, o.kbps, o.blocks[0], o.blocks[1]
+            );
             assert!(o.snr_db > last - 0.5, "SNR should rise with quality");
             last = o.snr_db;
         }

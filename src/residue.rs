@@ -36,10 +36,16 @@ impl Residue {
             return Err(invalid("residue type above 2"));
         }
         if self.partition_size == 0 || !(1..=64).contains(&self.classifications) {
-            return Err(invalid("residue partition size or classifications out of range"));
+            return Err(invalid(
+                "residue partition size or classifications out of range",
+            ));
         }
-        if self.cascade.len() != self.classifications as usize || self.books.len() != self.classifications as usize {
-            return Err(invalid("residue cascade does not match its classifications"));
+        if self.cascade.len() != self.classifications as usize
+            || self.books.len() != self.classifications as usize
+        {
+            return Err(invalid(
+                "residue cascade does not match its classifications",
+            ));
         }
         let Some(cb) = codebooks.get(self.classbook as usize) else {
             return Err(invalid("residue classbook does not exist"));
@@ -52,7 +58,9 @@ impl Residue {
             words = words.saturating_mul(self.classifications as u64);
         }
         if words > cb.entries() as u64 {
-            return Err(invalid("residue classifications^dimensions exceed the classbook's entries"));
+            return Err(invalid(
+                "residue classifications^dimensions exceed the classbook's entries",
+            ));
         }
         for (c, books) in self.books.iter().enumerate() {
             for (pass, &b) in books.iter().enumerate() {
@@ -74,7 +82,11 @@ impl Residue {
     }
 
     /// Header decode (8.6.1), after the 16-bit type.
-    pub(crate) fn read(r: &mut BitReader, residue_type: u16, codebooks: &[Codebook]) -> Result<Self> {
+    pub(crate) fn read(
+        r: &mut BitReader,
+        residue_type: u16,
+        codebooks: &[Codebook],
+    ) -> Result<Self> {
         let eop = |_| invalid("setup header ends inside a residue configuration");
         let begin = r.read(24).map_err(eop)?;
         let end = r.read(24).map_err(eop)?;
@@ -84,7 +96,11 @@ impl Residue {
         let mut cascade = Vec::new();
         for _ in 0..classifications {
             let low = r.read(3).map_err(eop)?;
-            let high = if r.read_flag().map_err(eop)? { r.read(5).map_err(eop)? } else { 0 };
+            let high = if r.read_flag().map_err(eop)? {
+                r.read(5).map_err(eop)?
+            } else {
+                0
+            };
             cascade.push((high * 8 + low) as u8);
         }
         let mut books = Vec::new();
@@ -97,7 +113,16 @@ impl Residue {
             }
             books.push(row);
         }
-        let residue = Residue { residue_type, begin, end, partition_size, classifications, classbook, cascade, books };
+        let residue = Residue {
+            residue_type,
+            begin,
+            end,
+            partition_size,
+            classifications,
+            classbook,
+            cascade,
+            books,
+        };
         residue.validate(codebooks)?;
         Ok(residue)
     }
@@ -129,7 +154,13 @@ impl Residue {
     /// per channel of the submap; vectors flagged in `do_not_decode` are
     /// left zero (for type 2, only if every one is flagged). An
     /// end-of-packet returns what was decoded up to that point.
-    pub(crate) fn decode(&self, books: &[Codebook], r: &mut BitReader, do_not_decode: &[bool], out: &mut [Vec<f32>]) -> std::result::Result<(), EndOfPacket> {
+    pub(crate) fn decode(
+        &self,
+        books: &[Codebook],
+        r: &mut BitReader,
+        do_not_decode: &[bool],
+        out: &mut [Vec<f32>],
+    ) -> std::result::Result<(), EndOfPacket> {
         if out.is_empty() {
             return Ok(());
         }
@@ -152,7 +183,14 @@ impl Residue {
 
     /// The common decode of 8.6.2, for format 0 (`in_order` false) or
     /// format 1 (`in_order` true).
-    fn decode_format(&self, books: &[Codebook], r: &mut BitReader, do_not_decode: &[bool], out: &mut [Vec<f32>], in_order: bool) -> std::result::Result<(), EndOfPacket> {
+    fn decode_format(
+        &self,
+        books: &[Codebook],
+        r: &mut BitReader,
+        do_not_decode: &[bool],
+        out: &mut [Vec<f32>],
+        in_order: bool,
+    ) -> std::result::Result<(), EndOfPacket> {
         let actual = out[0].len();
         let begin = (self.begin as usize).min(actual);
         let end = (self.end as usize).min(actual);
@@ -211,7 +249,13 @@ impl Residue {
 }
 
 /// Format 0 (8.6.3): a vector's scalars are `step` apart.
-fn decode_partition_0(book: &Codebook, r: &mut BitReader, v: &mut [f32], offset: usize, psize: usize) -> std::result::Result<(), EndOfPacket> {
+fn decode_partition_0(
+    book: &Codebook,
+    r: &mut BitReader,
+    v: &mut [f32],
+    offset: usize,
+    psize: usize,
+) -> std::result::Result<(), EndOfPacket> {
     let dim = book.dimensions as usize;
     let step = psize / dim;
     let mut tmp = vec![0f32; dim];
@@ -228,7 +272,13 @@ fn decode_partition_0(book: &Codebook, r: &mut BitReader, v: &mut [f32], offset:
 }
 
 /// Format 1 (8.6.4): a vector's scalars are consecutive.
-fn decode_partition_1(book: &Codebook, r: &mut BitReader, v: &mut [f32], offset: usize, psize: usize) -> std::result::Result<(), EndOfPacket> {
+fn decode_partition_1(
+    book: &Codebook,
+    r: &mut BitReader,
+    v: &mut [f32],
+    offset: usize,
+    psize: usize,
+) -> std::result::Result<(), EndOfPacket> {
     let dim = book.dimensions as usize;
     let mut i = 0;
     while i < psize {
@@ -260,13 +310,27 @@ mod tests {
         let scalar = Codebook::new(
             1,
             vec![4; 16],
-            Some(VqLookup { lookup_type: 1, minimum: float32_pack(-8.0), delta: float32_pack(1.0), value_bits: 4, sequence_p: false, multiplicands: (0..16).collect() }),
+            Some(VqLookup {
+                lookup_type: 1,
+                minimum: float32_pack(-8.0),
+                delta: float32_pack(1.0),
+                value_bits: 4,
+                sequence_p: false,
+                multiplicands: (0..16).collect(),
+            }),
         )
         .unwrap();
         let pair = Codebook::new(
             2,
             vec![3, 3, 3, 3, 3, 3, 3, 4, 4],
-            Some(VqLookup { lookup_type: 1, minimum: float32_pack(-1.0), delta: float32_pack(1.0), value_bits: 2, sequence_p: false, multiplicands: vec![0, 1, 2] }),
+            Some(VqLookup {
+                lookup_type: 1,
+                minimum: float32_pack(-1.0),
+                delta: float32_pack(1.0),
+                value_bits: 2,
+                sequence_p: false,
+                multiplicands: vec![0, 1, 2],
+            }),
         )
         .unwrap();
         // Classbook: 2 classifications, 2 per word: 4 entries.
@@ -275,26 +339,53 @@ mod tests {
         let quad = Codebook::new(
             4,
             vec![1, 1],
-            Some(VqLookup { lookup_type: 2, minimum: float32_pack(0.0), delta: float32_pack(1.0), value_bits: 4, sequence_p: false, multiplicands: vec![1, 2, 3, 4, 5, 6, 7, 8] }),
+            Some(VqLookup {
+                lookup_type: 2,
+                minimum: float32_pack(0.0),
+                delta: float32_pack(1.0),
+                value_bits: 4,
+                sequence_p: false,
+                multiplicands: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            }),
         )
         .unwrap();
         vec![scalar, pair, classbook, quad]
     }
 
-    fn config(residue_type: u16, begin: u32, end: u32, psize: u32, pass_books: [i16; 8]) -> Residue {
+    fn config(
+        residue_type: u16,
+        begin: u32,
+        end: u32,
+        psize: u32,
+        pass_books: [i16; 8],
+    ) -> Residue {
         let mut cascade1 = 0u8;
         for (j, &b) in pass_books.iter().enumerate() {
             if b >= 0 {
                 cascade1 |= 1 << j;
             }
         }
-        Residue { residue_type, begin, end, partition_size: psize, classifications: 2, classbook: 2, cascade: vec![0, cascade1], books: vec![[-1; 8], pass_books] }
+        Residue {
+            residue_type,
+            begin,
+            end,
+            partition_size: psize,
+            classifications: 2,
+            classbook: 2,
+            cascade: vec![0, cascade1],
+            books: vec![[-1; 8], pass_books],
+        }
     }
 
     /// Write classwords and partition vectors exactly as 8.6.2 lays them
     /// out, by hand, for one or more channels: `classes[ch][partition]`,
     /// `entries[pass][ch][partition]` (codebook entries per partition).
-    fn pack(books: &[Codebook], res: &Residue, classes: &[Vec<u8>], entries: &[Vec<Vec<Vec<u32>>>]) -> Vec<u8> {
+    fn pack(
+        books: &[Codebook],
+        res: &Residue,
+        classes: &[Vec<u8>],
+        entries: &[Vec<Vec<Vec<u32>>>],
+    ) -> Vec<u8> {
         let mut w = BitWriter::new();
         let parts = classes[0].len();
         for (pass, per_ch) in entries.iter().enumerate() {
@@ -313,7 +404,8 @@ mod tests {
                     for (ch, c) in classes.iter().enumerate() {
                         if res.books[c[p] as usize][pass] >= 0 {
                             for &e in &per_ch[ch][p] {
-                                books[res.books[c[p] as usize][pass] as usize].write_entry(&mut w, e);
+                                books[res.books[c[p] as usize][pass] as usize]
+                                    .write_entry(&mut w, e);
                             }
                         }
                     }
@@ -332,10 +424,19 @@ mod tests {
         res.validate(&books).unwrap();
         // Two partitions [2,6) and [6,10); the second classified 0 (silent).
         // Partition 0: pair entries 0 (-1,-1) and 5 (1, 0).
-        let bytes = pack(&books, &res, &[vec![1, 0]], &[vec![vec![vec![0, 5], vec![]]]]);
+        let bytes = pack(
+            &books,
+            &res,
+            &[vec![1, 0]],
+            &[vec![vec![vec![0, 5], vec![]]]],
+        );
         let mut out = vec![vec![0f32; 12]];
-        res.decode(&books, &mut BitReader::new(&bytes), &[false], &mut out).unwrap();
-        assert_eq!(out[0], vec![0.0, 0.0, -1.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        res.decode(&books, &mut BitReader::new(&bytes), &[false], &mut out)
+            .unwrap();
+        assert_eq!(
+            out[0],
+            vec![0.0, 0.0, -1.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        );
     }
 
     /// Format 0 interleaves by the codebook dimension: with a 4-dimensional
@@ -346,7 +447,8 @@ mod tests {
         let res = config(0, 0, 8, 8, [3, -1, -1, -1, -1, -1, -1, -1]);
         let bytes = pack(&books, &res, &[vec![1]], &[vec![vec![vec![0, 1]]]]);
         let mut out = vec![vec![0f32; 8]];
-        res.decode(&books, &mut BitReader::new(&bytes), &[false], &mut out).unwrap();
+        res.decode(&books, &mut BitReader::new(&bytes), &[false], &mut out)
+            .unwrap();
         // Entry 0 = (1,2,3,4) at 0,2,4,6; entry 1 = (5,6,7,8) at 1,3,5,7.
         assert_eq!(out[0], vec![1.0, 5.0, 2.0, 6.0, 3.0, 7.0, 4.0, 8.0]);
     }
@@ -358,9 +460,20 @@ mod tests {
         let books = books();
         let res = config(1, 0, 4, 4, [1, 0, -1, -1, -1, -1, -1, -1]);
         // Channel 1 is "do not decode": only channel 0 is packed.
-        let bytes = pack(&books, &res, &[vec![1]], &[vec![vec![vec![8, 0]]], vec![vec![vec![15, 0, 9, 8]]]]);
+        let bytes = pack(
+            &books,
+            &res,
+            &[vec![1]],
+            &[vec![vec![vec![8, 0]]], vec![vec![vec![15, 0, 9, 8]]]],
+        );
         let mut out = vec![vec![0f32; 4], vec![0f32; 4]];
-        res.decode(&books, &mut BitReader::new(&bytes), &[false, true], &mut out).unwrap();
+        res.decode(
+            &books,
+            &mut BitReader::new(&bytes),
+            &[false, true],
+            &mut out,
+        )
+        .unwrap();
         // Pass 0: (1,1), (-1,-1); pass 1 scalars 7, -8, 1, 0.
         assert_eq!(out[0], vec![8.0, -7.0, 0.0, -1.0]);
         assert_eq!(out[1], vec![0.0; 4]);
@@ -372,10 +485,21 @@ mod tests {
         let books = books();
         let res = config(2, 0, 8, 4, [1, -1, -1, -1, -1, -1, -1, -1]);
         // One vector of 8 values = 2 channels x 4.
-        let bytes = pack(&books, &res, &[vec![1, 1]], &[vec![vec![vec![0, 2], vec![6, 4]]]]);
+        let bytes = pack(
+            &books,
+            &res,
+            &[vec![1, 1]],
+            &[vec![vec![vec![0, 2], vec![6, 4]]]],
+        );
         let mut out = vec![vec![0f32; 4], vec![0f32; 4]];
         // One flagged channel does not stop the decode.
-        res.decode(&books, &mut BitReader::new(&bytes), &[true, false], &mut out).unwrap();
+        res.decode(
+            &books,
+            &mut BitReader::new(&bytes),
+            &[true, false],
+            &mut out,
+        )
+        .unwrap();
         // Interleaved: (-1,-1),(1,-1),(-1,1),(0,0) -> ch0 = -1,1,-1,0; ch1 = -1,-1,1,0.
         assert_eq!(out[0], vec![-1.0, 1.0, -1.0, 0.0]);
         assert_eq!(out[1], vec![-1.0, -1.0, 1.0, 0.0]);
@@ -391,10 +515,18 @@ mod tests {
     fn truncation_keeps_the_decoded_prefix() {
         let books = books();
         let res = config(1, 0, 8, 4, [0, -1, -1, -1, -1, -1, -1, -1]);
-        let bytes = pack(&books, &res, &[vec![1, 1]], &[vec![vec![vec![9, 10, 11, 12], vec![13, 14, 15, 0]]]]);
+        let bytes = pack(
+            &books,
+            &res,
+            &[vec![1, 1]],
+            &[vec![vec![vec![9, 10, 11, 12], vec![13, 14, 15, 0]]]],
+        );
         let cut = &bytes[..3];
         let mut out = vec![vec![0f32; 8]];
-        assert!(res.decode(&books, &mut BitReader::new(cut), &[false], &mut out).is_err());
+        assert!(
+            res.decode(&books, &mut BitReader::new(cut), &[false], &mut out)
+                .is_err()
+        );
         assert_eq!(&out[0][..4], &[1.0, 2.0, 3.0, 4.0]);
     }
 
@@ -409,7 +541,11 @@ mod tests {
         let back = Residue::read(&mut BitReader::new(&bytes), 2, &books).unwrap();
         assert_eq!(back, res);
         // A book without a lookup table is refused.
-        assert!(config(1, 0, 8, 4, [2, -1, -1, -1, -1, -1, -1, -1]).validate(&books).is_err());
+        assert!(
+            config(1, 0, 8, 4, [2, -1, -1, -1, -1, -1, -1, -1])
+                .validate(&books)
+                .is_err()
+        );
         // Three classifications cannot fit two per word in four entries.
         let mut bad = res.clone();
         bad.classifications = 3;

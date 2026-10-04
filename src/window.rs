@@ -22,13 +22,21 @@ pub(crate) struct Windows {
 
 impl Windows {
     pub(crate) fn new(blocksize: [usize; 2]) -> Self {
-        Windows { blocksize, slopes: [slope(blocksize[0] / 2), slope(blocksize[1] / 2)] }
+        Windows {
+            blocksize,
+            slopes: [slope(blocksize[0] / 2), slope(blocksize[1] / 2)],
+        }
     }
 
     /// The window as 4.3.1 builds it, `[left_start, left_end)` rising and
     /// `[right_start, right_end)` falling: returns those bounds and the slope
     /// used on each side.
-    fn layout(&self, long: bool, prev_long: bool, next_long: bool) -> (usize, usize, usize, usize, &[f32], &[f32]) {
+    fn layout(
+        &self,
+        long: bool,
+        prev_long: bool,
+        next_long: bool,
+    ) -> (usize, usize, usize, usize, &[f32], &[f32]) {
         let n = self.blocksize[long as usize];
         let bs0 = self.blocksize[0];
         let (ls, le, lslope) = if long && !prev_long {
@@ -80,11 +88,25 @@ mod tests {
     #[test]
     fn windows_follow_the_spec_formula() {
         let windows = Windows::new([256, 2048]);
-        for (long, prev, next) in [(false, false, false), (true, true, true), (true, false, true), (true, true, false), (true, false, false)] {
+        for (long, prev, next) in [
+            (false, false, false),
+            (true, true, true),
+            (true, false, true),
+            (true, true, false),
+            (true, false, false),
+        ] {
             let n = if long { 2048 } else { 256 };
             let w = windows.shape(long, prev, next);
-            let (ls, le, ln) = if long && !prev { (n / 4 - 64, n / 4 + 64, 128) } else { (0, n / 2, n / 2) };
-            let (rs, re, rn) = if long && !next { (n * 3 / 4 - 64, n * 3 / 4 + 64, 128) } else { (n / 2, n, n / 2) };
+            let (ls, le, ln) = if long && !prev {
+                (n / 4 - 64, n / 4 + 64, 128)
+            } else {
+                (0, n / 2, n / 2)
+            };
+            let (rs, re, rn) = if long && !next {
+                (n * 3 / 4 - 64, n * 3 / 4 + 64, 128)
+            } else {
+                (n / 2, n, n / 2)
+            };
             for i in 0..n {
                 let want = if i < ls {
                     0.0
@@ -99,7 +121,11 @@ mod tests {
                 } else {
                     0.0
                 };
-                assert!((w[i] as f64 - want).abs() < 1e-6, "({long},{prev},{next}) i {i}: {} vs {want}", w[i]);
+                assert!(
+                    (w[i] as f64 - want).abs() < 1e-6,
+                    "({long},{prev},{next}) i {i}: {} vs {want}",
+                    w[i]
+                );
             }
         }
     }
@@ -123,8 +149,15 @@ mod tests {
             for i in np / 2..np * 3 / 4 + nc / 4 {
                 let a = if i < np { wp[i] as f64 } else { 0.0 };
                 let j = i as i64 - offset;
-                let b = if j >= 0 && (j as usize) < nc { wc[j as usize] as f64 } else { 0.0 };
-                assert!((a * a + b * b - 1.0).abs() < 1e-6, "{prev_long}->{cur_long} at {i}: {a} {b}");
+                let b = if j >= 0 && (j as usize) < nc {
+                    wc[j as usize] as f64
+                } else {
+                    0.0
+                };
+                assert!(
+                    (a * a + b * b - 1.0).abs() < 1e-6,
+                    "{prev_long}->{cur_long} at {i}: {a} {b}"
+                );
             }
         }
     }

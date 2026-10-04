@@ -53,7 +53,9 @@ pub struct Codebook {
 
 impl PartialEq for Codebook {
     fn eq(&self, other: &Self) -> bool {
-        self.dimensions == other.dimensions && self.lengths == other.lengths && self.lookup == other.lookup
+        self.dimensions == other.dimensions
+            && self.lengths == other.lengths
+            && self.lookup == other.lookup
     }
 }
 
@@ -62,7 +64,11 @@ impl PartialEq for Codebook {
 pub fn float32_unpack(x: u32) -> f32 {
     let mantissa = (x & 0x1f_ffff) as f64;
     let exponent = ((x & 0x7fe0_0000) >> 21) as i32;
-    let m = if x & 0x8000_0000 != 0 { -mantissa } else { mantissa };
+    let m = if x & 0x8000_0000 != 0 {
+        -mantissa
+    } else {
+        mantissa
+    };
     (m * 2f64.powi(exponent - 788)) as f32
 }
 
@@ -134,7 +140,9 @@ impl Codebook {
                 t => return Err(invalid(format!("codebook lookup type {t}"))),
             };
             if l.multiplicands.len() as u64 != want {
-                return Err(invalid("VQ multiplicand count does not match the lookup type"));
+                return Err(invalid(
+                    "VQ multiplicand count does not match the lookup type",
+                ));
             }
             if l.multiplicands.iter().any(|&m| m >> l.value_bits != 0) {
                 return Err(invalid("VQ multiplicand wider than its value bits"));
@@ -142,7 +150,14 @@ impl Codebook {
             lookup_values = want as u32;
         }
         let huffman = Huffman::build(&lengths)?;
-        let mut book = Codebook { dimensions, lengths, lookup, huffman, values: None, lookup_values };
+        let mut book = Codebook {
+            dimensions,
+            lengths,
+            lookup,
+            huffman,
+            values: None,
+            lookup_values,
+        };
         if book.lookup.is_some() && entries as u64 * dimensions as u64 <= PRECOMPUTE_LIMIT {
             let d = dimensions as usize;
             let mut values = vec![0f32; entries as usize * d];
@@ -179,7 +194,11 @@ impl Codebook {
             }
             lengths = vec![0u8; entries as usize];
             for l in lengths.iter_mut() {
-                let used = if sparse { r.read_flag().map_err(eop)? } else { true };
+                let used = if sparse {
+                    r.read_flag().map_err(eop)?
+                } else {
+                    true
+                };
                 if used {
                     *l = r.read(5).map_err(eop)? as u8 + 1;
                 }
@@ -220,13 +239,22 @@ impl Codebook {
                     entries as u64 * dimensions as u64
                 };
                 if count * value_bits as u64 > r.remaining() as u64 {
-                    return Err(invalid("setup header ends inside a codebook's lookup table"));
+                    return Err(invalid(
+                        "setup header ends inside a codebook's lookup table",
+                    ));
                 }
                 let mut multiplicands = Vec::with_capacity(count as usize);
                 for _ in 0..count {
                     multiplicands.push(r.read(value_bits as u32).map_err(eop)?);
                 }
-                Some(VqLookup { lookup_type, minimum, delta, value_bits, sequence_p, multiplicands })
+                Some(VqLookup {
+                    lookup_type,
+                    minimum,
+                    delta,
+                    value_bits,
+                    sequence_p,
+                    multiplicands,
+                })
             }
             t => return Err(invalid(format!("codebook lookup type {t} is reserved"))),
         };
@@ -248,8 +276,10 @@ impl Codebook {
             let mut length = self.lengths[0] as u32;
             w.write(length - 1, 5);
             while current < entries {
-                let number =
-                    self.lengths[current as usize..].iter().take_while(|&&l| l as u32 == length).count() as u32;
+                let number = self.lengths[current as usize..]
+                    .iter()
+                    .take_while(|&&l| l as u32 == length)
+                    .count() as u32;
                 w.write(number, ilog((entries - current) as i64));
                 current += number;
                 length += 1;
@@ -295,7 +325,11 @@ impl Codebook {
     /// length is the dimension). Calls on a book without a lookup table are
     /// the caller's error; it checks [`has_lookup`](Self::has_lookup).
     #[inline]
-    pub(crate) fn decode_vector_add(&self, r: &mut BitReader, out: &mut [f32]) -> std::result::Result<(), EndOfPacket> {
+    pub(crate) fn decode_vector_add(
+        &self,
+        r: &mut BitReader,
+        out: &mut [f32],
+    ) -> std::result::Result<(), EndOfPacket> {
         let e = self.huffman.decode(r)? as usize;
         let d = self.dimensions as usize;
         if let Some(values) = &self.values {
@@ -357,7 +391,10 @@ impl Codebook {
     /// The codeword of `entry`: its bits with the first in the most
     /// significant used position, and its length (0 for an unused entry).
     pub fn codeword(&self, entry: u32) -> (u32, u8) {
-        (self.huffman.codes[entry as usize], self.lengths[entry as usize])
+        (
+            self.huffman.codes[entry as usize],
+            self.lengths[entry as usize],
+        )
     }
 
     /// Write the codeword of `entry`.
@@ -397,14 +434,26 @@ impl Huffman {
             // underspecified tree; streams carry them (the Xiph.Org
             // one-entry-codebook vector does) in books nothing reads.
             // Accept it; reading from it is an end-of-packet.
-            0 => return Ok(Huffman { codes, empty: true, ..Default::default() }),
+            0 => {
+                return Ok(Huffman {
+                    codes,
+                    empty: true,
+                    ..Default::default()
+                });
+            }
             1 => {
                 // Errata 20150226: a single used entry must declare length 1;
                 // it reads one bit, whatever its value.
                 if lengths[used[0]] != 1 {
-                    return Err(invalid("single-entry codebook whose codeword length is not 1"));
+                    return Err(invalid(
+                        "single-entry codebook whose codeword length is not 1",
+                    ));
                 }
-                return Ok(Huffman { codes, single: Some(used[0] as u32), ..Default::default() });
+                return Ok(Huffman {
+                    codes,
+                    single: Some(used[0] as u32),
+                    ..Default::default()
+                });
             }
             _ => {}
         }
@@ -483,7 +532,14 @@ impl Huffman {
                 table[(reversed | (fill << len)) as usize] = ((e as u32) << 6) | len;
             }
         }
-        Ok(Huffman { codes, table, table_bits, nodes, single: None, empty: false })
+        Ok(Huffman {
+            codes,
+            table,
+            table_bits,
+            nodes,
+            single: None,
+            empty: false,
+        })
     }
 
     #[inline]
@@ -526,7 +582,10 @@ mod tests {
 
     fn code_string(book: &Codebook, e: u32) -> String {
         let (code, len) = book.codeword(e);
-        (0..len).rev().map(|i| if code >> i & 1 == 1 { '1' } else { '0' }).collect()
+        (0..len)
+            .rev()
+            .map(|i| if code >> i & 1 == 1 { '1' } else { '0' })
+            .collect()
     }
 
     /// The worked example of 3.2.1.
@@ -548,7 +607,10 @@ mod tests {
         assert!(Codebook::new(1, vec![1, 1, 1], None).is_err());
         // No used entry: accepted (streams carry such books), unreadable.
         let empty = Codebook::new(1, vec![0, 0], None).unwrap();
-        assert_eq!(empty.decode_scalar(&mut BitReader::new(&[0xff])), Err(EndOfPacket));
+        assert_eq!(
+            empty.decode_scalar(&mut BitReader::new(&[0xff])),
+            Err(EndOfPacket)
+        );
     }
 
     #[test]
@@ -640,14 +702,25 @@ mod tests {
     #[test]
     fn lookup_type_1_vectors() {
         // 9 entries, 2 dimensions: 3 values {-1, 0, 1}.
-        let book = Codebook::new(2, vec![4, 4, 4, 4, 4, 4, 4, 3, 3].into_iter().map(|l| l as u8).collect(), lookup(1, -1.0, 1.0, false, vec![0, 1, 2]));
+        let book = Codebook::new(
+            2,
+            vec![4, 4, 4, 4, 4, 4, 4, 3, 3]
+                .into_iter()
+                .map(|l| l as u8)
+                .collect(),
+            lookup(1, -1.0, 1.0, false, vec![0, 1, 2]),
+        );
         // Lengths 4x7 + 3x2 is not complete; use a complete set instead.
         assert!(book.is_err());
         let lengths = vec![3, 3, 3, 3, 3, 3, 3, 4, 4];
         let book = Codebook::new(2, lengths, lookup(1, -1.0, 1.0, false, vec![0, 1, 2])).unwrap();
         for e in 0..9u32 {
             let v = book.vector(e);
-            assert_eq!(v, vec![(e % 3) as f32 - 1.0, (e / 3) as f32 - 1.0], "entry {e}");
+            assert_eq!(
+                v,
+                vec![(e % 3) as f32 - 1.0, (e / 3) as f32 - 1.0],
+                "entry {e}"
+            );
         }
         // sequence_p: each scalar adds the previous one.
         let lengths = vec![3, 3, 3, 3, 3, 3, 3, 4, 4];
@@ -678,9 +751,19 @@ mod tests {
             // ordered with a skipped length
             Codebook::new(1, vec![1, 3, 3, 3, 3], None).unwrap(),
             // plain (not ordered)
-            Codebook::new(2, vec![3, 3, 3, 3, 3, 3, 3, 4, 4].into_iter().rev().collect(), lookup(1, -1.0, 1.0, false, vec![0, 1, 2])).unwrap(),
+            Codebook::new(
+                2,
+                vec![3, 3, 3, 3, 3, 3, 3, 4, 4].into_iter().rev().collect(),
+                lookup(1, -1.0, 1.0, false, vec![0, 1, 2]),
+            )
+            .unwrap(),
             // sparse
-            Codebook::new(3, vec![0, 1, 0, 2, 2], lookup(2, -1.0, 0.25, true, (0..15).collect())).unwrap(),
+            Codebook::new(
+                3,
+                vec![0, 1, 0, 2, 2],
+                lookup(2, -1.0, 0.25, true, (0..15).collect()),
+            )
+            .unwrap(),
             // single entry
             Codebook::new(1, vec![0, 1], None).unwrap(),
         ];

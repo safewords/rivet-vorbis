@@ -21,7 +21,9 @@ mod common;
 use common::sha256;
 
 fn dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("vectors")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("vectors")
 }
 
 fn manifest() -> Vec<(String, String)> {
@@ -37,21 +39,35 @@ fn manifest() -> Vec<(String, String)> {
 
 #[test]
 fn sha256_known_answer() {
-    assert_eq!(sha256(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    assert_eq!(sha256(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    assert_eq!(
+        sha256(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert_eq!(
+        sha256(b""),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
 }
 
 /// Load the vectors present; None (skip) when the directory is empty.
 fn load() -> Option<Vec<(String, Vec<u8>)>> {
     let mut out = Vec::new();
     for (sum, name) in manifest() {
-        let Ok(bytes) = std::fs::read(dir().join(&name)) else { continue };
-        assert_eq!(sha256(&bytes), sum, "{name}: SHA-256 does not match the manifest");
+        let Ok(bytes) = std::fs::read(dir().join(&name)) else {
+            continue;
+        };
+        assert_eq!(
+            sha256(&bytes),
+            sum,
+            "{name}: SHA-256 does not match the manifest"
+        );
         out.push((name, bytes));
     }
     if out.is_empty() {
         if std::env::var("VORBIS_REQUIRE_VECTORS").is_ok() {
-            panic!("VORBIS_REQUIRE_VECTORS is set but tests/vectors/ holds no vectors (run tools/fetch-vectors.sh)");
+            panic!(
+                "VORBIS_REQUIRE_VECTORS is set but tests/vectors/ holds no vectors (run tools/fetch-vectors.sh)"
+            );
         }
         eprintln!("skipping: no test vectors in tests/vectors/ (run tools/fetch-vectors.sh)");
         return None;
@@ -80,7 +96,10 @@ fn declared_length(bytes: &[u8]) -> i64 {
 #[test]
 fn every_vector_decodes_to_its_declared_length() {
     let Some(vectors) = load() else { return };
-    println!("{:<30} {:>3} {:>6} {:>10} {:>10} {:>8} {:>8}", "vector", "ch", "rate", "samples", "declared", "peak", "rms dB");
+    println!(
+        "{:<30} {:>3} {:>6} {:>10} {:>10} {:>8} {:>8}",
+        "vector", "ch", "rate", "samples", "declared", "peak", "rms dB"
+    );
     for (name, bytes) in &vectors {
         // Chained links may change channel count and rate: read block by block.
         let mut reader = vorbis::OggReader::new(&bytes[..]);
@@ -90,7 +109,10 @@ fn every_vector_decodes_to_its_declared_length() {
         let mut count = 0usize;
         let mut channels = Vec::new();
         let mut rates = Vec::new();
-        while let Some(block) = reader.next_block().unwrap_or_else(|e| panic!("{name}: {e}")) {
+        while let Some(block) = reader
+            .next_block()
+            .unwrap_or_else(|e| panic!("{name}: {e}"))
+        {
             if channels.last() != Some(&block.samples.len()) {
                 channels.push(block.samples.len());
             }
@@ -110,17 +132,30 @@ fn every_vector_decodes_to_its_declared_length() {
             }
         }
         let declared = declared_length(bytes);
-        let decoded_channels = channels.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("/");
-        let decoded_rate = rates.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("/");
+        let decoded_channels = channels
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join("/");
+        let decoded_rate = rates
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join("/");
         let rms = 10.0 * (sum / count.max(1) as f64 + 1e-30).log10();
-        println!("{name:<30} {decoded_channels:>3} {decoded_rate:>6} {len:>10} {declared:>10} {peak:>8.4} {rms:>8.1}");
+        println!(
+            "{name:<30} {decoded_channels:>3} {decoded_rate:>6} {len:>10} {declared:>10} {peak:>8.4} {rms:>8.1}"
+        );
         if name == "unused-mode-test.ogg" {
             // 34 of its packets name mode 3 of a setup with three modes:
             // no audio can be made of them (4.3.1), so they are discarded
             // and the stream comes out shorter than its granule positions.
             assert_eq!(declared - len, 24959, "{name}");
         } else {
-            assert_eq!(len, declared, "{name}: decoded length against the granule positions");
+            assert_eq!(
+                len, declared,
+                "{name}: decoded length against the granule positions"
+            );
         }
         assert!(peak < 4.0, "{name}: implausible peak {peak}");
     }
@@ -131,7 +166,9 @@ fn every_vector_decodes_to_its_declared_length() {
 #[test]
 fn packets_naming_a_missing_mode_are_discarded() {
     let Some(vectors) = load() else { return };
-    let Some((_, bytes)) = vectors.iter().find(|(n, _)| n == "unused-mode-test.ogg") else { return };
+    let Some((_, bytes)) = vectors.iter().find(|(n, _)| n == "unused-mode-test.ogg") else {
+        return;
+    };
     let mut r = PacketReader::new(&bytes[..]);
     let mut headers = Vec::new();
     let mut decoder = None;
@@ -140,7 +177,8 @@ fn packets_naming_a_missing_mode_are_discarded() {
         if headers.len() < 3 {
             headers.push(p.data);
             if headers.len() == 3 {
-                decoder = Some(vorbis::Decoder::new(&headers[0], &headers[1], &headers[2]).unwrap());
+                decoder =
+                    Some(vorbis::Decoder::new(&headers[0], &headers[1], &headers[2]).unwrap());
             }
             continue;
         }
@@ -166,10 +204,22 @@ fn packets_naming_a_missing_mode_are_discarded() {
 #[test]
 fn lsp_vectors_agree_with_each_other() {
     let Some(vectors) = load() else { return };
-    let get = |n: &str| vectors.iter().find(|(name, _)| name == n).map(|(_, b)| vorbis::decode_ogg(b).unwrap().samples);
-    let names = ["lsp-test.ogg", "lsp-test2.ogg", "lsp-test3.ogg", "lsp-test4.ogg"];
+    let get = |n: &str| {
+        vectors
+            .iter()
+            .find(|(name, _)| name == n)
+            .map(|(_, b)| vorbis::decode_ogg(b).unwrap().samples)
+    };
+    let names = [
+        "lsp-test.ogg",
+        "lsp-test2.ogg",
+        "lsp-test3.ogg",
+        "lsp-test4.ogg",
+    ];
     let decoded: Vec<_> = names.iter().filter_map(|n| get(n)).collect();
-    let Some(other) = get("rc1-test.ogg") else { return };
+    let Some(other) = get("rc1-test.ogg") else {
+        return;
+    };
     if decoded.len() < 4 {
         return;
     }

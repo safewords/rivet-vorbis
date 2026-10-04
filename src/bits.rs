@@ -20,12 +20,20 @@ pub(crate) struct BitReader<'a> {
 
 impl<'a> BitReader<'a> {
     pub(crate) fn new(data: &'a [u8]) -> Self {
-        BitReader { data, pos: 0, eop: false }
+        BitReader {
+            data,
+            pos: 0,
+            eop: false,
+        }
     }
 
     /// Bits not yet read.
     pub(crate) fn remaining(&self) -> usize {
-        if self.eop { 0 } else { self.data.len() * 8 - self.pos }
+        if self.eop {
+            0
+        } else {
+            self.data.len() * 8 - self.pos
+        }
     }
 
     /// Read an unsigned field of `n` bits, `n` at most 32.
@@ -56,13 +64,21 @@ impl<'a> BitReader<'a> {
     /// of the stream in bit 0; bits past the end read as zero. Callers check
     /// [`remaining`](Self::remaining) before trusting the high bits.
     pub(crate) fn peek(&self, n: u32) -> u32 {
-        if self.eop || n == 0 { 0 } else { self.peek_raw(n) }
+        if self.eop || n == 0 {
+            0
+        } else {
+            self.peek_raw(n)
+        }
     }
 
     fn peek_raw(&self, n: u32) -> u32 {
         let byte = self.pos / 8;
         let shift = self.pos % 8;
-        let mask = if n == 32 { u32::MAX as u64 } else { (1u64 << n) - 1 };
+        let mask = if n == 32 {
+            u32::MAX as u64
+        } else {
+            (1u64 << n) - 1
+        };
         if let Some(b) = self.data.get(byte..byte + 8) {
             // One load: at least 57 bits from the position on.
             return ((u64::from_le_bytes(b.try_into().expect("8 bytes")) >> shift) & mask) as u32;
@@ -74,7 +90,11 @@ impl<'a> BitReader<'a> {
             }
         }
         v >>= shift;
-        let mask = if n == 32 { u32::MAX as u64 } else { (1u64 << n) - 1 };
+        let mask = if n == 32 {
+            u32::MAX as u64
+        } else {
+            (1u64 << n) - 1
+        };
         (v & mask) as u32
     }
 
@@ -108,7 +128,11 @@ impl BitWriter {
     /// Write the low `n` bits of `value`, `n` at most 32.
     pub(crate) fn write(&mut self, value: u32, n: u32) {
         debug_assert!(n <= 32);
-        let mut v = if n == 32 { value as u64 } else { (value as u64) & ((1u64 << n) - 1) };
+        let mut v = if n == 32 {
+            value as u64
+        } else {
+            (value as u64) & ((1u64 << n) - 1)
+        };
         let mut left = n;
         while left > 0 {
             if self.used == 0 {
@@ -131,7 +155,11 @@ impl BitWriter {
     /// Write a Huffman codeword: its bits go out first-bit-first (3.2.1),
     /// `code` holding the first bit in its most significant used position.
     pub(crate) fn write_codeword(&mut self, code: u32, len: u32) {
-        let reversed = if len == 0 { 0 } else { code.reverse_bits() >> (32 - len) };
+        let reversed = if len == 0 {
+            0
+        } else {
+            code.reverse_bits() >> (32 - len)
+        };
         self.write(reversed, len);
     }
 
@@ -157,7 +185,11 @@ impl BitWriter {
 /// `ilog` (9.2.1): the position of the highest set bit, 0 for zero and
 /// negative values.
 pub(crate) fn ilog(x: i64) -> u32 {
-    if x <= 0 { 0 } else { 64 - (x as u64).leading_zeros() }
+    if x <= 0 {
+        0
+    } else {
+        64 - (x as u64).leading_zeros()
+    }
 }
 
 #[cfg(test)]
@@ -177,7 +209,10 @@ mod tests {
         assert_eq!(w.bit_len(), 14);
         w.write(6969, 13);
         let bytes = w.into_bytes();
-        assert_eq!(bytes, vec![0b1111_1100, 0b0100_1000, 0b1100_1110, 0b0000_0110]);
+        assert_eq!(
+            bytes,
+            vec![0b1111_1100, 0b0100_1000, 0b1100_1110, 0b0000_0110]
+        );
 
         let mut r = BitReader::new(&bytes);
         assert_eq!(r.read(2), Ok(0b00));

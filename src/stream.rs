@@ -50,7 +50,14 @@ pub struct OggReader<R: Read> {
 impl<R: Read> OggReader<R> {
     /// Read from `inner`.
     pub fn new(inner: R) -> Self {
-        OggReader { packets: PacketReader::new(inner), link: None, pending: None, strict: false, out: Default::default(), done: false }
+        OggReader {
+            packets: PacketReader::new(inner),
+            link: None,
+            pending: None,
+            strict: false,
+            out: Default::default(),
+            done: false,
+        }
     }
 
     /// Strict mode: Ogg damage, packets the decoder would skip or decode in
@@ -107,7 +114,12 @@ impl<R: Read> OggReader<R> {
                 let mut position = link.position;
                 for samples in blocks {
                     let len = samples.first().map_or(0, |c| c.len()) as i64;
-                    self.out.push_back(Block { samples, sample_rate: rate, position, serial });
+                    self.out.push_back(Block {
+                        samples,
+                        sample_rate: rate,
+                        position,
+                        serial,
+                    });
                     position = position.map(|p| p + len);
                 }
             }
@@ -121,7 +133,11 @@ impl<R: Read> OggReader<R> {
         // identification header, and only if no link is live.
         if packet.bos {
             let live = self.link.as_ref().is_some_and(|l| !l.ended);
-            if !live && packet.data.len() >= 7 && packet.data[0] == 1 && &packet.data[1..7] == b"vorbis" {
+            if !live
+                && packet.data.len() >= 7
+                && packet.data[0] == 1
+                && &packet.data[1..7] == b"vorbis"
+            {
                 self.pending = Some((packet.serial, vec![packet.data]));
                 self.link = None;
             }
@@ -136,12 +152,20 @@ impl<R: Read> OggReader<R> {
                 let (serial, headers) = self.pending.take().expect("pending headers");
                 let mut decoder = Decoder::new(&headers[0], &headers[1], &headers[2])?;
                 decoder.set_strict(self.strict);
-                self.link = Some(Link { serial, decoder, position: None, group: Vec::new(), ended: false });
+                self.link = Some(Link {
+                    serial,
+                    decoder,
+                    position: None,
+                    group: Vec::new(),
+                    ended: false,
+                });
             }
             return Ok(());
         }
         let strict = self.strict;
-        let Some(link) = self.link.as_mut() else { return Ok(()) };
+        let Some(link) = self.link.as_mut() else {
+            return Ok(());
+        };
         if packet.serial != link.serial || link.ended {
             return Ok(());
         }
@@ -175,13 +199,18 @@ impl<R: Read> OggReader<R> {
                 if keep < total {
                     trim_back(&mut blocks, (total - keep) as usize);
                 } else if keep > total && strict && pos.is_some() {
-                    return Err(invalid("last page's granule position is past the decoded end"));
+                    return Err(invalid(
+                        "last page's granule position is past the decoded end",
+                    ));
                 }
                 start
             }
             (Some(g), Some(pos)) => {
                 if strict && g != pos + total {
-                    return Err(invalid(format!("granule position {g} where the decoded length gives {}", pos + total)));
+                    return Err(invalid(format!(
+                        "granule position {g} where the decoded length gives {}",
+                        pos + total
+                    )));
                 }
                 pos
             }
@@ -192,7 +221,12 @@ impl<R: Read> OggReader<R> {
         for samples in blocks {
             let len = samples[0].len() as i64;
             if len > 0 {
-                self.out.push_back(Block { samples, sample_rate: rate, position: Some(position), serial });
+                self.out.push_back(Block {
+                    samples,
+                    sample_rate: rate,
+                    position: Some(position),
+                    serial,
+                });
             }
             position += len;
         }
@@ -268,11 +302,18 @@ fn decode_ogg_with(bytes: &[u8], strict: bool) -> Result<Decoded> {
     let mut samples = vec![Vec::new(); identification.channels as usize];
     while let Some(block) = reader.next_block()? {
         if block.samples.len() != samples.len() || block.sample_rate != identification.sample_rate {
-            return Err(Error::Unsupported("chained links with different channel counts or sample rates".into()));
+            return Err(Error::Unsupported(
+                "chained links with different channel counts or sample rates".into(),
+            ));
         }
         for (s, b) in samples.iter_mut().zip(block.samples) {
             s.extend_from_slice(&b);
         }
     }
-    Ok(Decoded { sample_rate: identification.sample_rate, samples, comments, identification })
+    Ok(Decoded {
+        sample_rate: identification.sample_rate,
+        samples,
+        comments,
+        identification,
+    })
 }
