@@ -1,5 +1,5 @@
 //! Encoder and decoder throughput:
-//! `cargo run --release --example bench -- <pcm.raw> [seconds] [runs] [file.ogg …]`.
+//! `cargo run --release --example vorbis_bench -- <pcm.raw> [seconds] [runs] [file.ogg …]`.
 //!
 //! `pcm.raw` is 16-bit little-endian stereo PCM at 44.1 kHz. Its first
 //! `seconds` (default 60) are encoded at qualities 2, 5 and 8, and each

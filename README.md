@@ -71,7 +71,7 @@ bit rate from one quality value, −1 to 10. Ogg files from `encode_ogg` or
 ## Speed
 
 On a Ryzen 9 9950X (Windows, a shared machine, best of three), in
-multiples of real time; `cargo run --release --example bench -- <pcm.raw>
+multiples of real time; `cargo run --release --example vorbis_bench -- <pcm.raw>
 [seconds] [runs] [file.ogg …]` measures it.
 
 | | before | now |
